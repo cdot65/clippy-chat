@@ -1,0 +1,112 @@
+---
+id: authentication
+title: Authentication
+sidebar_position: 1
+---
+
+# Authentication
+
+Clippy Chat resolves identity **inside the app**, not just at the edge. Every API request runs
+through `resolveUser(req)` (`src/lib/auth/middleware.ts`), which supports **three** independent
+auth modes.
+
+```
+resolveUser(req)
+  ├─ ensureBootstrap()                      # seed local admin (once)
+  ├─ Authorization: Bearer …  → verifyBearer()   # Mode C: machine JWT
+  ├─ Cookie clippy_session    → findSession()    # Mode A/B: web + local admin
+  └─ otherwise                → null             # → 401
+```
+
+Two guards build on it:
+
+- **`requireUser`** — throws `401 {error:'unauthorized'}` if there is no user.
+- **`requireAdmin`** — throws `401` if unauthenticated, or `403 {error:'forbidden'}` if the user
+  is not an admin.
+
+## Mode A — Keycloak OIDC web users (auth code + PKCE)
+
+For humans. Standard OpenID Connect authorization-code flow with PKCE, via `openid-client`.
+
+1. **`GET /api/auth/login`** → `startLogin()` generates a PKCE verifier + `state`, builds the
+   authorization URL (`redirect_uri = ${APP_URL}/api/auth/callback`, `scope: openid profile email`,
+   `code_challenge_method: S256`), stores `{verifier, state}` in an **HttpOnly, SameSite=Lax,
+   Max-Age=600** cookie `clippy_pkce`, and 302-redirects to the provider.
+2. **`GET /api/auth/callback`** reads the PKCE cookie (`400` if missing) and **rebuilds the
+   callback URL against `APP_URL`** — behind a TLS-terminating proxy `request.url` is `http://`,
+   and `openid-client` derives `redirect_uri` from it, so without the rebuild the provider rejects
+   the grant with `invalid_grant`. On any IdP/user failure (tampered cookie, state mismatch,
+   denied consent, expired code) it returns **`400`, never `500`**. On success it upserts the
+   profile, creates a session storing the (encrypted) provider tokens, sets `clippy_session`,
+   clears `clippy_pkce`, and 302s to `/`.
+
+:::info Audience is intentionally not checked
+`verifyBearer` (Mode C) checks issuer, algorithm, and required claims, but **not** `aud`, pending
+an audience-mapper design. See `src/lib/auth/bearer.ts`.
+:::
+
+## Mode B — Local break-glass admin
+
+For getting in without a live OIDC provider.
+
+- `ensureAdminUser()` seeds a `user_profiles` row on first request: `authProvider: 'local'`,
+  `username = ADMIN_USERNAME`, `passwordHash = argon2id(ADMIN_PASSWORD)`, `isAdmin: true`. The
+  first-boot race across replicas is handled via a **partial unique index** on local usernames.
+- **`POST /api/auth/local-login`** (`{username, password}`) verifies with argon2 and, on success,
+  creates a session **with no provider tokens**.
+
+:::warning Rotating `ADMIN_PASSWORD` does not update an existing admin
+The password is only set when the row is **first seeded**. Changing `ADMIN_PASSWORD` afterward has
+no effect until the row is deleted and re-seeded.
+:::
+
+:::note Timing side-channel defense
+If the username/hash is absent, local-login still runs **one** argon2 verify against a dummy hash
+before returning `401`, so "no such user" costs the same as "wrong password".
+:::
+
+## Mode C — Machine bearer JWTs (client_credentials, scope `clippy-api`)
+
+For service accounts — **and the red-team adapter**. Callers present
+`Authorization: Bearer <access token>` obtained from the IdP's `client_credentials` grant.
+
+`verifyBearer(token)` (`src/lib/auth/bearer.ts`):
+
+1. Verifies the JWT with `jose.jwtVerify` against the provider's remote JWKS
+   (`${KC_ISSUER}/protocol/openid-connect/certs`, cached).
+2. Options: `issuer: KC_ISSUER`, `algorithms: ['RS256']`, `requiredClaims: ['sub','scope']`.
+3. **The scope gate:** splits the `scope` claim on spaces; if it does **not** contain
+   `M2M_SCOPE` (default `clippy-api`), it throws `missing required scope clippy-api`. This is the
+   sole authorization check for machine tokens.
+
+A valid bearer upserts a **service-account** profile (`isServiceAccount: true`). A failed verify
+logs and returns `null` (→ `401`) rather than throwing.
+
+```bash title="Get a machine token and call the API"
+TOKEN=$(curl -s https://auth.example.com/realms/myrealm/protocol/openid-connect/token \
+  -d grant_type=client_credentials \
+  -d client_id=clippy-m2m -d client_secret="$CLIENT_SECRET" \
+  -d scope=clippy-api | jq -r .access_token)
+
+curl -N -X POST https://chat.example.com/api/chat \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d "{\"conversationId\":\"$(uuidgen | tr A-Z a-z)\",\"message\":\"hello clippy\"}"
+```
+
+This is exactly the flow the **[Red-Team Adapter](/red-team/overview)** automates.
+
+## Sessions &amp; token encryption
+
+- **Session id:** a 32-byte base64url random string. Cookie `clippy_session` is **HttpOnly,
+  SameSite=Lax**, and `Secure` when `APP_URL` is https.
+- **Sliding TTL:** 7 days idle. On each `findSession`, if less than half the TTL remains, expiry
+  is bumped; if expired, the row is deleted.
+- **Provider-token encryption:** stored KC tokens are encrypted with **AES-256-GCM**, key =
+  `sha256(SESSION_SECRET)`, layout `iv(12) || authTag(16) || ciphertext`, base64. The **AAD is the
+  session id**, so a token blob copied to another session fails to decrypt. On decrypt failure
+  (secret rotation / tamper) the session is destroyed and the user simply re-logs-in.
+
+:::note Token refresh is scaffolded, not wired
+`refreshTokens` / `updateSessionTokens` exist and the callback stores the encrypted refresh token,
+but no route currently calls refresh — stored provider tokens are unused after login.
+:::

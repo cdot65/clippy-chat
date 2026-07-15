@@ -1,0 +1,68 @@
+---
+id: overview
+title: Red-Team Adapter — Overview
+sidebar_label: Overview
+sidebar_position: 1
+---
+
+# Red-Team Adapter — Overview
+
+> **This is the primary purpose of the whole project.** Clippy Chat is a realistic target so
+> that this adapter has something real to drive.
+
+Palo Alto AI Red Teaming can attack many targets out of the box (hosted model APIs, plain
+OpenAI-compatible endpoints, and so on). But real applications rarely expose a naked model:
+they sit behind **authentication**, use a **custom request/response shape**, and often
+**stream** their answers. To point the platform at one of those, you write a **custom target
+adapter** — a small Python module that teaches the platform how to talk to _your_ endpoint.
+
+Clippy Chat is deliberately awkward in exactly the ways a real app is:
+
+| Real-world wrinkle | How Clippy Chat has it | What the adapter must do |
+| --- | --- | --- |
+| **Auth is required** | Every `/api/chat` call needs a Keycloak machine (M2M) bearer JWT whose `scope` includes `clippy-api`. | Fetch a token via the `client_credentials` grant, cache it, attach it as `Authorization: Bearer …`. |
+| **Custom request body** | `{"conversationId": <uuid>, "message": <str>}`, not the OpenAI `messages` array. | Build that body, minting a fresh `conversationId` per probe. |
+| **Streaming response** | Success is `text/event-stream` (SSE), not JSON. | Concatenate the `delta` frames into one reply string. |
+| **Distinct error channel** | Errors come back as a JSON envelope `{"error": "..."}` with a non-2xx status. | Detect non-2xx, surface the error instead of treating it as a model answer. |
+
+## The adapter contract
+
+The adapter implements three functions the platform calls in order. Each maps cleanly onto one
+concern:
+
+```
+authenticate(context)          pre_process(context, input)        post_process(context, resp)
+  one OAuth token call    ─▶     build POST /api/chat        ─▶     parse SSE → reply text
+  cached as context.auth         (fresh UUID per probe)             (or surface an error)
+        │                               │                                   ▲
+        └── token ──────────────────────┴──────────────▶ Clippy Chat ───────┘
+                                                         (SSE or JSON error)
+```
+
+- **`authenticate(context)`** — one OAuth `client_credentials` call to the token endpoint.
+  Returns an `AuthResult` with the access token and a TTL, so the platform caches it and
+  refreshes shortly before expiry.
+- **`pre_process(context, inference_input)`** — turns one red-team prompt into a
+  `POST /api/chat` request: the bearer header plus a JSON body with a **new UUID** so every
+  probe is an independent single-turn conversation.
+- **`post_process(context, raw_response)`** — turns Clippy's response into the reply text the
+  engine scores: handle rate-limits, surface config/auth errors loudly, then parse the SSE
+  stream.
+
+## How it maps to the app
+
+| Adapter step | Clippy Chat source | Contract |
+| --- | --- | --- |
+| `authenticate` | Keycloak (external OIDC) → `src/lib/auth/bearer.ts` verifies the token | Token `scope` **must** contain `clippy-api` (`M2M_SCOPE`) or `verifyBearer` rejects it |
+| `pre_process` | `src/routes/api/chat.ts` → `src/lib/chat/service.ts` (`ensureConversation`) | Body `{conversationId, message}`; a fresh UUID auto-creates the conversation |
+| `post_process` | `sse()` helper in `src/routes/api/chat.ts` | `event: delta` → reply tokens; `event: done` → ignore; `event: error` → mid-stream failure (still HTTP 200) |
+
+## Read next
+
+- **[The Adapter](/red-team/adapter)** — a line-by-line walkthrough of `clippy_redteam_adapter.py`.
+- **[Running a Scan](/red-team/running-a-scan)** — the vars and secrets to configure, and how to drive it.
+
+:::note Placeholders only
+The endpoints below (`chat.example.com`, `auth.example.com`, realm `myrealm`) are examples.
+Swap in your own target's values.
+:::

@@ -1,0 +1,140 @@
+---
+id: api
+title: HTTP API Reference
+sidebar_position: 1
+---
+
+# HTTP API Reference
+
+All endpoints live under `src/routes/api/`. Unless noted, errors use the JSON envelope
+`{"error": "<message>"}`. "Auth" is the identity required via middleware (see
+**[Authentication](/guides/authentication)**).
+
+:::note Malformed UUIDs return 404
+Resource routes treat a malformed or non-owned id as **`404`**, never `400`/`403`, to avoid
+leaking which ids exist.
+:::
+
+## Summary
+
+| Method | Path | Auth | Success |
+| --- | --- | --- | --- |
+| `GET` | `/api/auth/login` | none | `302` to IdP; sets `clippy_pkce` |
+| `GET` | `/api/auth/callback` | PKCE cookie | `302` to `/`; sets `clippy_session` |
+| `POST` | `/api/auth/local-login` | none | `{ok:true}` + `clippy_session` |
+| `POST` | `/api/auth/logout` | cookie | `{ok:true}`; clears `clippy_session` |
+| `GET` | `/api/me` | requireUser | user object |
+| `GET` | `/api/conversations` | requireUser | `Conversation[]` |
+| `DELETE` | `/api/conversations/:id` | requireUser | `{ok:true}` (soft delete) |
+| `GET` | `/api/conversations/:id/messages` | requireUser | `Message[]` (no `system`) |
+| `POST` | `/api/chat` | requireUser | **SSE stream** |
+| `GET` | `/api/admin/conversations` | requireAdmin | paginated log |
+| `GET` | `/api/admin/conversations/:id` | requireAdmin | full detail |
+
+## Auth
+
+### `GET /api/auth/login`
+Starts the OIDC auth-code + PKCE flow. Sets an HttpOnly `clippy_pkce` cookie (Max-Age 600) and
+302-redirects to the provider.
+
+### `GET /api/auth/callback`
+Completes the flow. Query `code`, `state`. `400 missing pkce cookie` if the cookie is absent;
+`400 authentication failed` on any IdP/user error. On success sets `clippy_session`, clears
+`clippy_pkce`, redirects to `/`.
+
+### `POST /api/auth/local-login`
+```json title="Request"
+{ "username": "admin", "password": "changeme" }
+```
+`{ "ok": true }` + `Set-Cookie: clippy_session` on success. `400 invalid body`,
+`401 invalid credentials` otherwise.
+
+### `POST /api/auth/logout`
+Clears the session cookie and deletes the session row. Always `{ "ok": true }`.
+
+## User & conversations
+
+### `GET /api/me`
+```json title="200"
+{ "id": "…", "username": "…", "displayName": "…", "email": "…", "isAdmin": false }
+```
+
+### `GET /api/conversations`
+Returns the caller's non-deleted conversations, newest first:
+```json title="200 — Conversation[]"
+[
+  {
+    "id": "uuid",
+    "title": "first 80 chars of first message",
+    "model": "solidrust/Mistral-7B-Instruct-v0.3-AWQ",
+    "createdAt": "…",
+    "updatedAt": "…",
+    "lastMessage": { "role": "assistant", "content": "…(≤120 chars)…" }
+  }
+]
+```
+
+### `DELETE /api/conversations/:id`
+Soft-deletes (sets `deletedAt`). `{ "ok": true }`, or `404` if the id is malformed or not owned.
+
+### `GET /api/conversations/:id/messages`
+Ownership-checked. Returns messages **excluding `system`**, oldest first:
+```json title="200 — Message[]"
+[ { "id": "uuid", "role": "user", "content": "…", "interrupted": false, "createdAt": "…" } ]
+```
+
+## Chat (SSE)
+
+### `POST /api/chat`
+```json title="Request"
+{ "conversationId": "uuid", "message": "1..8000 chars" }
+```
+
+**Success is `200 text/event-stream`**, not JSON. Frames:
+
+```text
+event: delta
+data: {"content":"Hel"}
+
+event: delta
+data: {"content":"lo!"}
+
+event: done
+data: {"messageId":"uuid","promptTokens":42,"completionTokens":7}
+```
+
+An inference failure emits `event: error` / `data: {"message":"inference failed, try again"}`
+(still HTTP 200). Errors before streaming: `400 invalid body`, `404 not found`, `401`.
+
+:::tip This is the red-team target
+The **[Red-Team Adapter](/red-team/adapter)** builds this request and parses these exact frames.
+:::
+
+## Admin
+
+### `GET /api/admin/conversations`
+Query: `page` (int ≥ 1), `username` (substring filter). Page size **50**.
+```json title="200"
+{
+  "rows": [
+    {
+      "id": "uuid", "title": "…", "model": "…",
+      "createdAt": "…", "updatedAt": "…", "deletedAt": null,
+      "owner": { "username": "…", "authProvider": "keycloak" },
+      "messageCount": 12, "promptTokens": 900, "completionTokens": 300
+    }
+  ],
+  "total": 137, "page": 1, "pageSize": 50
+}
+```
+`400 invalid query`, `401`, `403`.
+
+### `GET /api/admin/conversations/:id`
+```json title="200"
+{
+  "conversation": { "id": "…", "title": "…", "model": "…", "createdAt": "…", "updatedAt": "…", "deletedAt": null },
+  "owner": { "id": "…", "username": "…", "email": "…", "authProvider": "local", "isServiceAccount": false },
+  "messages": [ { "id": "…", "role": "system", "content": "…", "promptTokens": null, "completionTokens": null, "interrupted": false, "createdAt": "…" } ]
+}
+```
+Includes **all** roles and messages. `404` if not found; `401`/`403` per the gate.

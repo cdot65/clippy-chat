@@ -1,0 +1,98 @@
+---
+id: chat-pipeline
+title: Chat Pipeline & Streaming
+sidebar_position: 2
+---
+
+# Chat Pipeline & Streaming
+
+Everything a chat turn touches, from `POST /api/chat` to streamed tokens.
+
+## The flow
+
+`POST /api/chat` (`src/routes/api/chat.ts`):
+
+1. **`requireUser(request)`** — any of the three [auth modes](/guides/authentication).
+2. **Validate body** with zod: `{conversationId: uuid, message: string 1..8000}` → `400` on
+   failure.
+3. **`ensureConversation(conversationId, user.id, message)`** — the `conversationId` is
+   **client-supplied**:
+   - exists, owned, not deleted → reuse;
+   - exists but foreign or deleted → `NotFoundError` → **`404`**;
+   - absent → created in one transaction: the `conversations` row (`model = VLLM_MODEL`,
+     `title = message.slice(0,80)`) **and** a seed `messages` row (`role: 'system'`, the Clippy
+     persona), so a conversation is never observable without its system row. A concurrent create
+     on the same id is caught via unique violation → the winner is returned.
+4. **Persist the user turn** — `appendMessage(id, 'user', message)` (also bumps `updatedAt`).
+5. **Build the prompt** — `foldSystem(trimHistory(loadHistory(id), CONTEXT_BUDGET))` where
+   `CONTEXT_BUDGET = 8192 − 1024 = 7168` tokens (reserving 1024 for the completion).
+6. **Stream** — open a `ReadableStream`; for each event from `chatStream(history, signal)` emit
+   SSE, accumulate the assistant text and token usage; on completion persist the assistant row and
+   emit `done`.
+
+## Mistral v0.3 template quirks
+
+The default model (`Mistral-7B-Instruct-v0.3`) has a strict chat template. Two transforms in
+`src/lib/chat/history.ts` keep it happy:
+
+- **`foldSystem`** — Mistral rejects the `system` role, so all system messages are concatenated
+  and **prepended to the first user turn's content**; standalone system entries are dropped.
+- **`trimHistory`** — keeps the system message(s) + newest turns that fit `maxTokens` (approx
+  `ceil(len/4)` tokens per message), dropping the oldest prefix. Then it enforces a **user-first
+  guarantee**: leading `assistant` turns are shifted off so the first non-system turn is always a
+  `user` turn (Mistral rejects a payload that starts with `assistant`).
+
+:::tip Swapping models
+`VLLM_MODEL` sets the model. If you point Clippy at a model without Mistral's alternation rules,
+the folding/trimming is still safe — it just becomes a no-op-ish normalization.
+:::
+
+## The persona
+
+`CLIPPY_SYSTEM_PROMPT` (`src/lib/chat/persona.ts`):
+
+> You are Clippy 📎, a friendly, upbeat AI assistant … Light paperclip humor is welcome; never let
+> it get in the way of a good answer.
+
+## The vLLM call
+
+`chatStream` (`src/lib/chat/vllm.ts`) does `POST ${VLLM_BASE_URL}/v1/chat/completions` with:
+
+```json
+{
+  "model": "<VLLM_MODEL>",
+  "messages": [ ... ],
+  "stream": true,
+  "stream_options": { "include_usage": true }
+}
+```
+
+- Adds `Authorization: Bearer ${VLLM_API_KEY}` **only if `VLLM_API_KEY` is set** (cluster vLLM runs
+  with `--api-key`; a dev vLLM may not).
+- Parses the upstream SSE stream, yielding `{type:'delta', content}` and
+  `{type:'usage', promptTokens, completionTokens}`. A non-2xx (or missing body) throws
+  `vllm error: <status> <text>`. The reader is always cancelled in `finally`.
+
+## The SSE contract (app → client)
+
+Wire format is `event: <name>\ndata: <json>\n\n`:
+
+| Event | Data | Meaning |
+| --- | --- | --- |
+| `delta` | `{"content": "<token chunk>"}` | one chunk of the reply — concatenate |
+| `done` | `{"messageId","promptTokens?","completionTokens?"}` | end marker, after the assistant row is persisted |
+| `error` | `{"message":"inference failed, try again"}` | a real inference error (not a client disconnect) |
+
+Response headers: `content-type: text/event-stream`, `cache-control: no-cache`,
+`connection: keep-alive`.
+
+### Interruption handling
+
+- **Client disconnects** (`request.signal.aborted`) with partial content → persist the partial
+  assistant row with `interrupted: true`, emit **nothing**.
+- **Inference error** → persist the partial row with `interrupted: true`, emit `error`, log.
+- `safeEnqueue` swallows enqueue-after-close races.
+
+The client consumer `streamChat` (`src/lib/api.ts`) POSTs, redirects to `/login` on `401`, parses
+the SSE frames, and invokes `on.delta` / `on.done` / `on.error`. The red-team adapter reimplements
+this same parse in Python — see **[The Adapter](/red-team/adapter)**.

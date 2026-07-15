@@ -1,0 +1,88 @@
+---
+id: getting-started
+title: Getting Started
+sidebar_position: 2
+---
+
+# Getting Started
+
+Run the whole Clippy Chat app locally. You need **Node 22+**, **Docker** (for the dev
+Postgres), and access to a **vLLM** OpenAI-compatible endpoint for live replies.
+
+## 1. Clone and install
+
+```bash
+git clone https://github.com/cdot65/clippy-chat.git
+cd clippy-chat
+npm install
+```
+
+## 2. Start the dev database
+
+A Postgres 17 container on `localhost:5433` (see `docker-compose.yml`):
+
+```bash
+docker compose up -d db
+```
+
+## 3. Configure the environment
+
+Copy the template and fill it in. Every value in `.env.example` is a placeholder:
+
+```bash
+cp .env.example .env
+```
+
+The minimum to boot:
+
+```bash title=".env"
+DATABASE_URL=postgres://clippy:clippy@localhost:5433/clippy
+APP_URL=http://localhost:3000
+VLLM_BASE_URL=http://<vllm-host>:8000
+VLLM_MODEL=solidrust/Mistral-7B-Instruct-v0.3-AWQ
+# VLLM_API_KEY=...          # only if your vLLM runs with --api-key
+KC_ISSUER=https://auth.example.com/realms/myrealm
+KC_CLIENT_ID=clippy-web
+KC_CLIENT_SECRET=changeme
+SESSION_SECRET=<openssl rand -base64 32>
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=changeme
+M2M_SCOPE=clippy-api
+```
+
+See **[Configuration](/reference/configuration)** for every variable, its purpose, and defaults.
+
+:::tip No Keycloak handy?
+You don't need a live OIDC provider to try the app. The **local break-glass admin**
+(`ADMIN_USERNAME` / `ADMIN_PASSWORD`) logs in without Keycloak — see
+**[Authentication](/guides/authentication)**.
+:::
+
+## 4. Apply migrations
+
+```bash
+npm run db:migrate
+```
+
+## 5. Run the dev server
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Unauthenticated requests redirect to `/login`; sign in with the
+local admin account, start a new chat, and send a message — the reply streams in token by token.
+
+## Test, typecheck, build
+
+```bash
+npm test          # vitest; integration tests need the dev db (docker compose up -d db)
+npm run typecheck # tsc --noEmit
+npm run build && npm start
+```
+
+## Next steps
+
+- **[Red-Team Adapter](/red-team/overview)** — the reason this app exists.
+- **[Architecture](/architecture)** — how the pieces fit together.
+- **[HTTP API Reference](/reference/api)** — every endpoint.

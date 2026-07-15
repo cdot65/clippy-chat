@@ -1,0 +1,48 @@
+---
+id: admin-panel
+title: Admin Panel
+sidebar_position: 3
+---
+
+# Admin Panel
+
+A read-only conversation-log console at `/admin` (`src/routes/admin.tsx`).
+
+## Access control
+
+- **Client gate:** the page fetches `/api/me`; if `!me.isAdmin` it navigates away to `/`. The
+  admin link only appears in the sidebar for admins.
+- **Server gate (the real one):** both admin endpoints call **`requireAdmin`**, returning `403`
+  for authenticated non-admins and `401` for anonymous callers. The client gate is convenience;
+  the server gate is enforcement.
+
+## What it shows
+
+A paginated **Conversation Log** table with columns: **User, Title, Msgs, Tokens**
+(summed prompt/completion), **Updated, Created**, and a `deleted` badge for soft-deleted
+conversations. A username filter box applies on Enter; prev/next pages the results.
+
+Clicking a row opens a **transcript flyout** with:
+
+- conversation metadata — id, owner (`username (authProvider[, service])`), email, model,
+  created/updated/deleted timestamps;
+- the **full transcript including `system` messages**, each with role, timestamp, prompt/completion
+  token counts, and an `interrupted` badge.
+
+:::note Admin sees everything, including soft-deleted
+User-facing queries hide soft-deleted conversations, but the admin list and detail include them —
+`softDeleteConversation` only sets `deletedAt`, it never removes rows.
+:::
+
+## Endpoints
+
+| Method | Path | Returns |
+| --- | --- | --- |
+| `GET` | `/api/admin/conversations?page=<n>&username=<substr>` | `{rows, total, page, pageSize}` — page size **50**; each row carries owner, `messageCount`, summed tokens, and `deletedAt` |
+| `GET` | `/api/admin/conversations/:id` | `{conversation, owner, messages}` — **all** roles and messages, oldest first |
+
+Backing code: `adminListConversations` / `adminGetConversation` in `src/lib/chat/admin.ts`. The
+list joins conversations → user profiles and left-joins messages to compute counts and token sums,
+with an optional `ILIKE %username%` filter, ordered by `updatedAt` desc.
+
+See the **[HTTP API Reference](/reference/api)** for exact request/response shapes.

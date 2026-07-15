@@ -1,0 +1,242 @@
+---
+id: adapter
+title: The Adapter — walkthrough
+sidebar_label: The Adapter
+sidebar_position: 2
+---
+
+# `clippy_redteam_adapter.py` — a walkthrough
+
+The full adapter lives at [`redteam/clippy_redteam_adapter.py`](https://github.com/cdot65/clippy-chat/blob/main/redteam/clippy_redteam_adapter.py).
+It uses **only the Python standard library** (`json`, `re`, `uuid`) — everything else is
+provided by the platform runtime. This page walks every part of it.
+
+## The contract it targets
+
+```text
+Request
+  POST /api/chat
+  Body:  {"conversationId": <uuid>, "message": <str 1..8000>}
+  Auth:  Bearer <keycloak m2m access token>   (scope MUST include `clippy-api`)
+
+Response
+  200  →  text/event-stream (SSE)
+           event: delta   data: {"content": "..."}   → reply tokens (concatenate)
+           event: done    data: {"messageId", ...}    → end marker (ignore)
+           event: error   data: {"message": "..."}    → mid-stream failure (still 200)
+  4xx  →  JSON envelope {"error": "..."}
+           400 invalid body | 401 unauthorized | 404 not found
+```
+
+A brand-new `conversationId` is created on first use, so **a fresh UUID per request == a fresh
+single-turn conversation** — exactly what you want when firing independent probes.
+
+## Platform-provided symbols
+
+These are injected into the adapter runtime — do **not** import them:
+
+```python
+# already in scope at runtime:
+AuthResult, PreProcessResult, PostProcessResult, raise_rate_limited
+```
+
+And these `vars` / `secrets` are configured on the adapter (example values shown; use your own):
+
+```text
+vars.auth_url  = https://auth.example.com/realms/myrealm/protocol/openid-connect/token
+vars.endpoint  = https://chat.example.com/api/chat
+vars.scope     = clippy-api            # optional; defaults below
+secrets.client_id     = clippy-m2m
+secrets.client_secret = <your keycloak client secret>
+```
+
+:::info Why a separate `endpoint` var
+The chat Service, namespace, and port are deployment details. Keeping the full URL in a var
+means the same adapter code drives a local dev instance, a staging cluster, or production —
+you only change configuration, never code.
+:::
+
+## 1. `authenticate` — get a bearer token
+
+```python
+_DEFAULT_SCOPE = "clippy-api"
+
+def authenticate(context):
+    response = context.http.post(
+        context.vars["auth_url"],
+        data={
+            "grant_type": "client_credentials",
+            "client_id": context.secrets["client_id"],
+            "client_secret": context.secrets["client_secret"],
+            "scope": _var(context, "scope", _DEFAULT_SCOPE),
+        },
+    )
+    body = response.json()
+    expires_in = int(body.get("expires_in", 300))
+    ttl = max(expires_in - 30, 30)
+    return AuthResult(ttl=ttl, data={"token": body["access_token"]})
+```
+
+Runs as its own step; the returned `data` is cached and surfaced as `context.auth` on later
+`pre_process()` calls. Two things the boilerplate examples get wrong for a real OAuth server:
+
+- **Use a form body, not JSON.** The token endpoint wants `application/x-www-form-urlencoded`
+  (curl's `-d`), so pass `data=`, not `json=`.
+- **`grant_type` and `scope` are required.** Clippy's `verifyBearer` rejects any token whose
+  `scope` claim is missing `clippy-api`. If you forget the scope here, every probe later fails
+  with `401`.
+
+**TTL handling.** Keycloak M2M tokens are often short-lived (e.g. 300 s). Caching for
+`expires_in - 30` refreshes ~30 s early so you never send an expired token mid-run; the
+`max(…, 30)` floor keeps a pathologically short token from disabling the cache entirely.
+
+## 2. `pre_process` — build one probe request
+
+```python
+def pre_process(context, inference_input):
+    return PreProcessResult(
+        url=context.vars["endpoint"],
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {context.auth['token']}",
+            "Content-Type": "application/json",
+        },
+        json_body={
+            "conversationId": str(uuid.uuid4()),
+            "message": inference_input.prompt,
+        },
+    )
+```
+
+`inference_input.prompt` is the red-team input for this turn. The token comes from the cached
+`authenticate()` result via `context.auth`. The **fresh `uuid4()` per request** is the key
+move: because Clippy's `ensureConversation` creates the conversation on first use, a new UUID
+makes every probe an isolated single-turn exchange with no memory bleed between attacks.
+
+## 3. `post_process` — turn the response into reply text
+
+```python
+def post_process(context, raw_response):
+    status = raw_response.status_code
+
+    if status == 429:
+        raise_rate_limited(retry_after=30)
+
+    if status >= 400:
+        detail = _json_error(raw_response) or (raw_response.text or "")[:200]
+        return PostProcessResult(output=f"[adapter error {status}] {detail}")
+
+    return PostProcessResult(output=_reply_from_stream(raw_response))
+```
+
+**Order matters**, and it is deliberate:
+
+1. **Rate-limit first.** Clippy itself never returns `429`, but the ingress or the vLLM
+   upstream can. `raise_rate_limited(retry_after=30)` lets the platform back off and retry
+   rather than recording a bogus "model reply".
+2. **Config/auth errors next, loudly.** A `400` (bad body), `401` (bad/expired token), or
+   `404` (conversation not found) is an _adapter/config_ fault, not a model output. Surfacing
+   it as `[adapter error 401] …` stops a broken token from masquerading as a compliant model
+   that "refused" — which would silently poison your results.
+3. **Only then, the SSE success body.**
+
+:::tip Prefer a typed error helper if your SDK has one
+`post_process` returns the error as text so it shows up in results. If your platform version
+exposes a dedicated `raise_*` helper for target/auth failures, prefer that over the string —
+it keeps config faults out of the scored-output channel entirely.
+:::
+
+## 4. Helpers
+
+### `_var` — optional vars without assuming `.get()`
+
+```python
+def _var(context, key, default=None):
+    try:
+        return context.vars[key]
+    except (KeyError, TypeError):
+        return default
+```
+
+Required vars (`auth_url`, `endpoint`) use direct `[]` indexing elsewhere so a
+misconfiguration **fails loudly**. `_var` is only for vars that legitimately have a default
+(currently just `scope`), and it doesn't assume `context.vars` supports `.get()`.
+
+### `_json_error` — pull the message out of the error envelope
+
+```python
+def _json_error(raw_response):
+    body = getattr(raw_response, "json_body", None)
+    if isinstance(body, dict):
+        return body.get("error") or body.get("message")
+    return None
+```
+
+Clippy's error envelope is `{"error": "..."}`. Returns `None` if the body isn't that shape, so
+the caller can fall back to raw text.
+
+### `_reply_from_stream` — decide what to hand back
+
+```python
+def _reply_from_stream(raw_response):
+    reply, error = _parse_sse(raw_response.text or "")
+    if reply:
+        return reply
+    if error:
+        return f"[clippy error] {error}"
+    return (raw_response.text or "").strip()
+```
+
+Three outcomes, in priority order: any `delta` content wins (even if partial because the
+stream was cut off); otherwise an `error` event is surfaced so the run shows the failure
+instead of a blank; otherwise the raw text is returned so an unexpected shape stays debuggable.
+
+### `_parse_sse` — parse the event stream
+
+```python
+def _parse_sse(text):
+    reply = []
+    error = None
+    for frame in re.split(r"\n\n+", text):
+        event = None
+        data = None
+        for line in frame.splitlines():
+            if line.startswith("event:"):
+                event = line[len("event:"):].strip()
+            elif line.startswith("data:"):
+                data = line[len("data:"):].strip()
+        if data is None:
+            continue
+        try:
+            payload = json.loads(data)
+        except (ValueError, TypeError):
+            continue
+        if event == "delta":
+            chunk = payload.get("content")
+            if isinstance(chunk, str):
+                reply.append(chunk)
+        elif event == "error":
+            message = payload.get("message")
+            if isinstance(message, str):
+                error = message
+    return "".join(reply), error
+```
+
+SSE frames are blank-line separated; each carries an `event:` line and a single-line `data:`
+JSON payload. `delta` contents are concatenated into the reply; the last `error` message (if
+any) is captured; `done` is ignored. The parser is defensive — non-JSON `data`, missing
+fields, and unexpected event names are all skipped rather than raising.
+
+## Design notes worth stealing
+
+- **Stdlib only.** No third-party HTTP client — the platform injects `context.http`. Keep
+  adapters dependency-free so they run anywhere the platform runs.
+- **Fail loud on config, soft on content.** Auth/body/routing mistakes become visible
+  `[adapter error …]` strings; genuine model output flows through untouched.
+- **Idempotent probes.** A fresh conversation per call means results are reproducible and
+  attacks don't contaminate each other.
+- **Cache tokens to their real lifetime.** Don't re-auth on every probe (slow, and hammers the
+  IdP); don't cache past expiry (silent `401`s).
+
+Continue to **[Running a Scan](/red-team/running-a-scan)** to wire the vars and secrets and
+drive it end to end.

@@ -1,0 +1,97 @@
+---
+id: running-a-scan
+title: Running a Scan
+sidebar_label: Running a Scan
+sidebar_position: 3
+---
+
+# Running a Scan
+
+How to point Palo Alto AI Red Teaming at Clippy Chat using the adapter. The exact platform UI for
+registering a custom adapter varies by version — consult the product docs for the upload/config
+screens — but the **inputs the adapter needs are fixed** by its code, and they're listed here.
+
+## 1. Provide the adapter
+
+Register [`redteam/clippy_redteam_adapter.py`](https://github.com/cdot65/clippy-chat/blob/main/redteam/clippy_redteam_adapter.py)
+as a **custom target adapter**. It imports only the standard library; the platform supplies
+`context`, `AuthResult`, `PreProcessResult`, `PostProcessResult`, and `raise_rate_limited` at
+runtime.
+
+## 2. Configure `vars`
+
+| Var | Required | Example | Purpose |
+| --- | --- | --- | --- |
+| `auth_url` | ✅ | `https://auth.example.com/realms/myrealm/protocol/openid-connect/token` | OIDC token endpoint (`client_credentials`) |
+| `endpoint` | ✅ | `https://chat.example.com/api/chat` | Clippy's chat route |
+| `scope` | — | `clippy-api` | Token scope; defaults to `clippy-api` if omitted |
+
+:::warning The scope must match `M2M_SCOPE`
+Clippy's `verifyBearer` rejects any token whose `scope` claim doesn't contain the app's
+`M2M_SCOPE` (default `clippy-api`). Get this wrong and **every probe returns `401`**, surfaced as
+`[adapter error 401] …`.
+:::
+
+## 3. Configure `secrets`
+
+| Secret | Example | Purpose |
+| --- | --- | --- |
+| `client_id` | `clippy-m2m` | The IdP machine (M2M) client id |
+| `client_secret` | `<from your IdP>` | That client's secret |
+
+The machine client must be allowed the `clippy-api` scope in your IdP.
+
+## 4. What happens per probe
+
+```
+authenticate()   → one client_credentials call → cached bearer token (TTL = expires_in − 30s)
+pre_process()    → POST {endpoint}
+                     Authorization: Bearer <token>
+                     {"conversationId": <fresh uuid>, "message": <probe prompt>}
+post_process()   → 429  → raise_rate_limited(retry_after=30)
+                   ≥400 → "[adapter error <status>] <detail>"   (loud, not scored as a reply)
+                   200  → concatenated SSE `delta` content       (the model's reply)
+```
+
+A **fresh `conversationId` per probe** makes each attack an independent single-turn conversation —
+no memory carries between probes.
+
+## 5. Reading results
+
+- **A normal reply** is the joined `delta` tokens from the SSE stream — this is what the engine
+  scores.
+- **`[clippy error] <msg>`** means the stream carried an `error` event (a mid-stream inference
+  failure) — the app was reached but generation failed.
+- **`[adapter error <status>] <detail>`** means a config/auth/routing fault (`400`/`401`/`404`) —
+  fix the vars/secrets, **not** the prompt. `401` almost always means a missing/incorrect scope or
+  an expired token; `404` means the `conversationId` handling changed; `400` means the body shape
+  drifted.
+
+## 6. Smoke-test the target first
+
+Before a full run, confirm the target and credentials with a raw call (this is exactly what the
+adapter automates):
+
+```bash
+TOKEN=$(curl -s https://auth.example.com/realms/myrealm/protocol/openid-connect/token \
+  -d grant_type=client_credentials \
+  -d client_id=clippy-m2m -d client_secret="$CLIENT_SECRET" \
+  -d scope=clippy-api | jq -r .access_token)
+
+curl -N -X POST https://chat.example.com/api/chat \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d "{\"conversationId\":\"$(uuidgen | tr A-Z a-z)\",\"message\":\"ignore previous instructions\"}"
+```
+
+You should see `event: delta` frames stream back. If you get a JSON `{"error":…}` with a non-2xx
+status instead, resolve that before running the adapter.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| every probe `[adapter error 401]` | scope missing/incorrect, or wrong `client_secret` |
+| `[adapter error 404]` | conversation not found — usually a request-shape mismatch |
+| `[adapter error 400]` | body failed validation (message empty or > 8000 chars) |
+| results all blank | target reachable but generation returns nothing — check vLLM/`VLLM_MODEL` |
+| intermittent rate-limit backoff | the ingress/vLLM returned `429`; the adapter honors `retry_after` |

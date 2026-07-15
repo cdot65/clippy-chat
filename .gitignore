@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.output/
+.env
+src/routeTree.gen.ts
+.nitro/
+.tanstack/
+.claude/
+# internal planning scaffolding — kept local, not published
+/docs/

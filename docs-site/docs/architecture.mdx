@@ -1,0 +1,80 @@
+---
+id: architecture
+title: Architecture
+sidebar_position: 3
+---
+
+# Architecture
+
+Clippy Chat is a **single deployable Node app**. One [TanStack Start](https://tanstack.com/start)
+server renders the React SSR UI *and* serves the file-based JSON/SSE API routes. It talks to
+Postgres (persistence), a vLLM server (inference), and an OIDC provider (web-user auth).
+
+## Request flow
+
+```
+ red-team runner ─┐  Bearer JWT (scope: clippy-api)
+ browser ─────────┤  session cookie / OIDC
+                  ▼
+   ┌──────────────────────────────────────────────┐
+   │  Ingress  — TLS termination + rate-limit      │
+   └──────────────────────────────────────────────┘
+                  ▼
+   ┌──────────────────────────────────────────────┐
+   │  clippy-chat  (TanStack Start, Node 22)       │
+   │    src/routes/**  (React pages + /api routes) │
+   │    resolveUser → requireUser / requireAdmin   │
+   └───────────────┬───────────────┬──────────────┘
+                   │               │
+         /api/chat │               │ all other /api
+                   ▼               ▼
+        ┌──────────────┐   ┌──────────────────┐
+        │ vLLM         │   │ Postgres 17      │
+        │ /v1/chat/... │   │ conversations,   │
+        │ stream:true  │   │ messages, users  │
+        └──────────────┘   └──────────────────┘
+```
+
+- **Browser → UI.** React pages (`index.tsx`, `login.tsx`, `admin.tsx`, `c.$conversationId.tsx`)
+  fetch data via [React Query](https://tanstack.com/query) calling the client API layer
+  `src/lib/api.ts` (plain `fetch` to `/api/*`).
+- **Browser / machine → API.** Handlers under `src/routes/api/**` resolve identity with
+  `resolveUser` / `requireUser` / `requireAdmin` (`src/lib/auth/middleware.ts`), then hit the DB
+  or vLLM.
+- **API → vLLM.** Only `POST /api/chat` streams from vLLM (`src/lib/chat/vllm.ts`) via the
+  OpenAI-compatible `/v1/chat/completions` endpoint with `stream: true`, and re-emits the tokens
+  to the browser as Server-Sent Events.
+- **API → OIDC provider.** `openid-client` handles auth-code + PKCE for web login
+  (`src/lib/auth/oidc.ts`); `jose` verifies machine JWTs against the provider's remote JWKS
+  (`src/lib/auth/bearer.ts`).
+
+## The HTML shell
+
+`src/routes/__root.tsx` is the document shell. It sets the page title, loads `src/styles.css`,
+and wraps the app in a **fresh React Query `QueryClient` per mount** — a new client per SSR
+request, so one user's cached data never leaks into another's server-rendered response.
+
+## Persistence layer
+
+`src/db/client.ts` exposes a **lazily-created `pg.Pool`** (max 10 connections, 5s connect
+timeout). Schema and queries use [Drizzle ORM](https://orm.drizzle.team/). See
+**[Database Schema](/reference/database)** for the tables.
+
+## Multi-replica awareness
+
+In production the app runs as multiple replicas behind the ingress. That topology shows up in the
+code as deliberate race handling:
+
+- **Admin bootstrap** seeds the local admin exactly once across replicas, catching the unique
+  violation and returning the winner (`src/lib/auth/bootstrap.ts`).
+- **Conversation create** tolerates two replicas creating the same client-supplied
+  `conversationId` concurrently (`src/lib/chat/service.ts`).
+- **OIDC discovery / JWKS** are cached per process and refetched on demand.
+
+## Dev vs. production server
+
+- **Dev:** `npm run dev` → Vite dev server; TanStack Start serves SSR itself.
+- **Production:** `npm run build` bundles the server with **Nitro** to `.output/server/index.mjs`;
+  `npm start` runs it. Nitro is **build-only** — it is not used by the dev server.
+
+See **[Deployment](/deployment)** for Docker and Kubernetes.

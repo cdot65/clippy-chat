@@ -1,0 +1,65 @@
+---
+id: intro
+title: Clippy Chat
+sidebar_position: 1
+slug: /
+---
+
+# Clippy Chat 📎
+
+**Clippy Chat is a small but complete, self-hosted AI chat web app — built to serve as a
+realistic _target_ for writing and testing a [Palo Alto AI Red Teaming](https://www.paloaltonetworks.com/)
+custom adapter.**
+
+The chat app is real and works end to end: a browser UI, three authentication modes, a
+streaming inference backend, and full conversation logging. But the whole reason it exists is
+the file at [`redteam/clippy_redteam_adapter.py`](/red-team/adapter) — a worked, heavily
+annotated example of a **custom target adapter** that lets an AI red-teaming platform drive the
+app's authenticated, server-sent-events chat endpoint as if it were any other model target.
+
+:::tip The point of this project
+If you are here to learn how to write a **custom red-team target adapter** for a bespoke,
+authenticated, streaming chat API — start with the **[Red-Team Adapter](/red-team/overview)**
+section. Everything else documents the target it drives.
+:::
+
+## What's in the box
+
+| Piece | What it is |
+| --- | --- |
+| **Red-team adapter** | A Python adapter (`authenticate` / `pre_process` / `post_process`) that fetches an OAuth token, posts a probe to the chat API, and parses the SSE reply back into plain text. **The centerpiece.** |
+| **Chat web app** | [TanStack Start](https://tanstack.com/start) (React 19 + Nitro on Node 22) with file-based API routes. |
+| **Three auth modes** | OIDC (auth-code + PKCE) for humans, a local break-glass admin, and machine-to-machine bearer JWTs for service accounts and red-team runners. |
+| **Streaming inference** | vLLM chat completions relayed to the browser as Server-Sent Events. |
+| **Persistence** | Postgres 17 via [Drizzle ORM](https://orm.drizzle.team/); every conversation and message is logged. |
+| **Admin panel** | A conversation-log table with a per-conversation transcript flyout. |
+
+## Architecture at a glance
+
+```
+ red-team runner ─┐
+ browser ─────────┤
+                  ▼
+        Ingress (TLS, rate-limit)
+                  ▼
+        clippy-chat  (TanStack Start, Node 22)
+           ├──► vLLM        (chat completions, stream: true)
+           └──► Postgres    (conversations + messages)
+```
+
+Auth is enforced inside the app, not just at the edge: web sessions come from an OIDC
+provider, and machine callers present a bearer JWT whose `scope` claim **must** include the
+API scope. The red-team adapter uses exactly that machine path.
+
+## Where to go next
+
+- **[Red-Team Adapter → Overview](/red-team/overview)** — why the adapter exists and how it maps to the app.
+- **[Red-Team Adapter → The Adapter](/red-team/adapter)** — a line-by-line walkthrough of the code.
+- **[Red-Team Adapter → Running a Scan](/red-team/running-a-scan)** — configure vars/secrets and drive it.
+- **[Getting Started](/getting-started)** — run the whole app locally.
+- **[Architecture](/architecture)** — the full request flow and stack.
+
+:::note Example configuration only
+Every hostname, realm, and credential in these docs is a **placeholder** (`chat.example.com`,
+`auth.example.com`, realm `myrealm`, `changeme`). Nothing here is a live endpoint or secret.
+:::

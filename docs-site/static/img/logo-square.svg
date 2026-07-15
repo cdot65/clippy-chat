@@ -1,0 +1,9 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t">
+  <title id="t">Gruvbox docs mark</title>
+  <!-- Tighter square mark: tilde "~" in a gruvbox-yellow rounded square.
+       Swap the rect fill for your own brand color if needed. -->
+  <rect x="6" y="6" width="88" height="88" rx="18" fill="#fabd2f"/>
+  <path d="M26 56 C 33 42, 43 42, 50 51 S 67 60, 74 46"
+        fill="none" stroke="#1d2021" stroke-width="9"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

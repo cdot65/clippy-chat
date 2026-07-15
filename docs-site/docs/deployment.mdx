@@ -1,0 +1,91 @@
+---
+id: deployment
+title: Deployment
+sidebar_position: 4
+---
+
+# Deployment
+
+The app is a single container plus a Postgres database and a vLLM endpoint.
+
+## Docker image
+
+The `Dockerfile` is a two-stage build:
+
+1. **build** (`node:22-slim`) — `npm ci`, `npm run build` (Vite → Nitro bundle in `.output/`).
+2. **runtime** (`node:22-slim`) — `NODE_ENV=production`, `npm ci --omit=dev`, copies `.output/`,
+   `drizzle/`, and `scripts/migrate.mjs`. `EXPOSE 3000`, `CMD ["node", ".output/server/index.mjs"]`.
+
+```bash
+docker build -t ghcr.io/cdot65/clippy-chat:latest .
+docker push ghcr.io/cdot65/clippy-chat:latest
+```
+
+:::note Migrations run separately
+`scripts/migrate.mjs` is copied into the image but is **not** part of the container `CMD`. Run
+`npm run db:migrate` (or an init job) against `DATABASE_URL` before/at rollout.
+:::
+
+## Runtime dependencies
+
+| Dependency | Purpose |
+| --- | --- |
+| **Postgres 17** | conversations, messages, users, sessions |
+| **vLLM** (OpenAI-compatible) | inference — `POST /v1/chat/completions`, `stream: true` |
+| **OIDC provider** (e.g. Keycloak) | web-user login + machine tokens |
+
+All configuration is via [environment variables](/reference/configuration). Provide secrets
+(`SESSION_SECRET`, `KC_CLIENT_SECRET`, `ADMIN_PASSWORD`, and `VLLM_API_KEY` if used) through your
+platform's secret store — never bake them into the image.
+
+## Kubernetes (illustrative)
+
+A typical topology: the app behind an ingress that terminates TLS and rate-limits, running
+multiple replicas as a `ClusterIP` on port 3000, with Postgres and vLLM reachable in-cluster.
+
+```yaml title="Example — secrets via a Secret (values are placeholders)"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clippy-chat
+type: Opaque
+stringData:
+  SESSION_SECRET: "REPLACE_ME"     # openssl rand -base64 32
+  KC_CLIENT_SECRET: "REPLACE_ME"   # from your IdP web client
+  ADMIN_PASSWORD: "REPLACE_ME"
+  # VLLM_API_KEY: "REPLACE_ME"     # only if vLLM runs with --api-key
+```
+
+```yaml title="Example — non-secret config via env"
+env:
+  - { name: APP_URL,       value: "https://chat.example.com" }
+  - { name: KC_ISSUER,     value: "https://auth.example.com/realms/myrealm" }
+  - { name: KC_CLIENT_ID,  value: "clippy-web" }
+  - { name: VLLM_BASE_URL, value: "http://vllm.vllm.svc.cluster.local:8000" }
+  - { name: DATABASE_URL,  valueFrom: { secretKeyRef: { name: clippy-postgres, key: url } } }
+```
+
+:::warning These manifests are examples, not committed infra
+The values above are placeholders (`chat.example.com`, `auth.example.com`, `REPLACE_ME`). This
+repo does not ship environment-specific Kubernetes manifests — keep those in your own private infra
+repo and inject real secrets from a secret manager.
+:::
+
+Because the app runs multiple replicas, its code already handles the concurrency that implies
+(admin bootstrap, conversation-create races) — see [Architecture](/architecture#multi-replica-awareness).
+
+## Documentation site (this site)
+
+These docs are a Docusaurus site under `docs-site/`, published to **GitHub Pages by GitHub
+Actions** on every push to `main` that touches `docs-site/**`
+(`.github/workflows/deploy-docs.yml`). The workflow builds `docs-site/` and deploys the static
+output — it never runs the app or handles app secrets.
+
+To preview the docs locally:
+
+```bash
+cd docs-site
+npm install
+npm run start      # dev server with hot reload
+npm run build      # production build (must pass; onBrokenLinks: 'throw')
+```

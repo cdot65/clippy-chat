@@ -1,0 +1,2 @@
+CREATE INDEX "conversations_user_updated_idx" ON "conversations" USING btree ("user_id","updated_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "user_profiles_local_username_idx" ON "user_profiles" USING btree ("username") WHERE "user_profiles"."auth_provider" = 'local';

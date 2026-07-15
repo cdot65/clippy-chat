@@ -1,0 +1,63 @@
+---
+id: configuration
+title: Configuration
+sidebar_position: 2
+---
+
+# Configuration
+
+All configuration is via environment variables, parsed and validated **once** at startup with
+zod (`src/lib/env.ts`). A missing or invalid **required** variable throws on the first `env()`
+call — the app fails fast rather than booting half-configured.
+
+## Variables
+
+| Variable | Rule | Required | Default |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | non-empty Postgres connection string | ✅ | — |
+| `APP_URL` | URL; also decides cookie `Secure` + OIDC redirect rebuild | ✅ | — |
+| `VLLM_BASE_URL` | URL | — | `http://vllm.vllm.svc.cluster.local:8000` |
+| `VLLM_MODEL` | string | — | `solidrust/Mistral-7B-Instruct-v0.3-AWQ` |
+| `VLLM_API_KEY` | string | optional | unset — header omitted when absent; **required if vLLM runs with `--api-key`** |
+| `KC_ISSUER` | URL (OIDC realm base) | ✅ | — |
+| `KC_CLIENT_ID` | non-empty string | ✅ | — |
+| `KC_CLIENT_SECRET` | non-empty string | ✅ | — |
+| `SESSION_SECRET` | string, **min length 32** (sha256'd into the AES key) | ✅ | — |
+| `ADMIN_USERNAME` | non-empty string | ✅ | — |
+| `ADMIN_PASSWORD` | non-empty string | ✅ | — |
+| `M2M_SCOPE` | string — the scope a bearer token **must** carry | — | `clippy-api` |
+
+## `.env.example`
+
+```bash title=".env.example"
+DATABASE_URL=postgres://clippy:clippy@localhost:5433/clippy
+APP_URL=http://localhost:3000
+VLLM_BASE_URL=http://vllm.vllm.svc.cluster.local:8000
+VLLM_MODEL=solidrust/Mistral-7B-Instruct-v0.3-AWQ
+VLLM_API_KEY= # required when cluster vLLM runs with --api-key
+KC_ISSUER=https://auth.example.com/realms/myrealm
+KC_CLIENT_ID=clippy-web
+KC_CLIENT_SECRET=changeme
+SESSION_SECRET=<openssl rand -base64 32>
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=changeme
+M2M_SCOPE=clippy-api
+```
+
+:::danger Never commit a real `.env`
+`.env` is git-ignored. Only `.env.example` (all placeholders) is committed. Generate a real
+`SESSION_SECRET` with `openssl rand -base64 32` and set strong admin/client secrets in your
+deployment's secret store — not in the repo.
+:::
+
+## Notes on individual variables
+
+- **`APP_URL`** does double duty: cookies get the `Secure` flag only when it is `https`, and the
+  OIDC callback rebuilds `redirect_uri` against it (needed behind a TLS-terminating proxy).
+- **`SESSION_SECRET`** is `sha256`'d to derive the AES-256-GCM key that encrypts stored provider
+  tokens. Rotating it invalidates existing encrypted tokens — affected sessions are transparently
+  destroyed and users re-log-in.
+- **`M2M_SCOPE`** is the single authorization check for machine tokens. The
+  [red-team adapter](/red-team/overview) must request this scope or every probe returns `401`.
+- **`ADMIN_PASSWORD`** is only applied when the admin row is first seeded (see
+  [Authentication](/guides/authentication#mode-b--local-break-glass-admin)).

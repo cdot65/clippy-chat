@@ -1,0 +1,87 @@
+---
+id: database
+title: Database Schema
+sidebar_position: 3
+---
+
+# Database Schema
+
+Postgres 17 via Drizzle ORM (`src/db/schema.ts`). All timestamps are `timestamptz`. Migrations
+live in `drizzle/` and are applied with `npm run db:migrate`.
+
+```
+user_profiles ──1:*──> sessions        (ON DELETE cascade)
+user_profiles ──1:*──> conversations
+conversations ──1:*──> messages
+```
+
+## `user_profiles`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | default random |
+| `keycloak_sub` | text, **unique** | nullable (local admin has none) |
+| `auth_provider` | text NOT NULL | `'keycloak' \| 'local'` |
+| `username` | text NOT NULL | |
+| `email` | text | |
+| `display_name` | text | |
+| `password_hash` | text | local users only (argon2id) |
+| `is_admin` | bool NOT NULL | default `false` |
+| `is_service_account` | bool NOT NULL | default `false` |
+| `created_at` / `updated_at` | timestamptz NOT NULL | default `now()` |
+
+**Partial unique index** `user_profiles_local_username_idx` on `username` **WHERE
+`auth_provider='local'`** — guards the admin-bootstrap race while leaving Keycloak usernames
+unconstrained.
+
+## `sessions`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text PK | 32-byte base64url random |
+| `user_id` | uuid NOT NULL → `user_profiles.id` | **ON DELETE cascade** |
+| `kc_tokens` | jsonb | nullable; `{enc: <AES-GCM base64>}` or null for local sessions |
+| `expires_at` | timestamptz NOT NULL | sliding 7-day idle TTL |
+| `created_at` | timestamptz NOT NULL | default `now()` |
+
+## `conversations`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | **client-supplied** (no default) |
+| `user_id` | uuid NOT NULL → `user_profiles.id` | |
+| `title` | text | first 80 chars of the first message |
+| `model` | text NOT NULL | `VLLM_MODEL` at creation |
+| `deleted_at` | timestamptz | nullable — **soft delete** |
+| `created_at` / `updated_at` | timestamptz NOT NULL | default `now()` |
+
+Index `conversations_user_updated_idx` on `(user_id, updated_at)`.
+
+## `messages`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | default `gen_random_uuid()` |
+| `conversation_id` | uuid NOT NULL → `conversations.id` | |
+| `role` | text NOT NULL | `'system' \| 'user' \| 'assistant'` |
+| `content` | text NOT NULL | |
+| `prompt_tokens` | integer | nullable |
+| `completion_tokens` | integer | nullable |
+| `interrupted` | bool NOT NULL | default `false` |
+| `created_at` | timestamptz NOT NULL | default `now()` |
+
+Index `messages_conversation_created_idx` on `(conversation_id, created_at)`.
+
+## Migrations
+
+| File | Contents |
+| --- | --- |
+| `drizzle/0000_warm_may_parker.sql` | tables, FKs, `messages` index |
+| `drizzle/0001_busy_fallen_one.sql` | `conversations` composite index + partial unique local-username index |
+
+Author schema changes in `src/db/schema.ts`, then:
+
+```bash
+npm run db:generate   # drizzle-kit emits SQL into drizzle/
+npm run db:migrate    # scripts/migrate.mjs applies them
+```
