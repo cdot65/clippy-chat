@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { requireUser } from '~/lib/auth/middleware'
-import { foldSystem, trimHistory } from '~/lib/chat/history'
+import { coalesceRoles, foldSystem, trimHistory } from '~/lib/chat/history'
 import { NotFoundError, appendMessage, ensureConversation, loadHistory } from '~/lib/chat/service'
 import { chatStream } from '~/lib/chat/vllm'
 
@@ -21,8 +21,10 @@ export const Route = createFileRoute('/api/chat')({
       try { await ensureConversation(conversationId, user.id, message) }
       catch (e) { if (e instanceof NotFoundError) return Response.json({ error: 'not found' }, { status: 404 }); throw e }
       await appendMessage(conversationId, 'user', message)
-      // foldSystem: Mistral v0.3 template rejects the system role — see history.ts
-      const history = foldSystem(trimHistory(await loadHistory(conversationId), CONTEXT_BUDGET))
+      // Mistral v0.3 template rejects the system role and any non-alternating
+      // sequence — foldSystem drops system, coalesceRoles merges adjacent
+      // same-role turns (concurrent-turn race leaves u,u in history). see history.ts
+      const history = coalesceRoles(foldSystem(trimHistory(await loadHistory(conversationId), CONTEXT_BUDGET)))
 
       const encoder = new TextEncoder()
       const stream = new ReadableStream({

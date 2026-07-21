@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { foldSystem, trimHistory } from './history'
+import { coalesceRoles, foldSystem, trimHistory } from './history'
 
 const msg = (role: 'system' | 'user' | 'assistant', content: string) => ({ role, content })
 
@@ -45,4 +45,37 @@ it('foldSystem merges system content into the first user turn', () => {
 it('foldSystem is a no-op without a system message', () => {
   const history = [msg('user', 'hi'), msg('assistant', 'yo')]
   expect(foldSystem(history)).toEqual(history)
+})
+
+it('coalesceRoles merges consecutive user turns (the concurrent-turn race)', () => {
+  // two turns interleave on one conversation: user_A, user_B land before either
+  // assistant → DB order is u,u,a,a. Mistral v0.3 rejects the non-alternating
+  // payload; coalescing restores strict alternation.
+  const out = coalesceRoles([msg('user', 'a'), msg('user', 'b'), msg('assistant', 'c'), msg('assistant', 'd')])
+  expect(out).toEqual([msg('user', 'a\n\nb'), msg('assistant', 'c\n\nd')])
+})
+
+it('coalesceRoles leaves an already-alternating payload untouched', () => {
+  const history = [msg('user', 'u1'), msg('assistant', 'a1'), msg('user', 'u2')]
+  expect(coalesceRoles(history)).toEqual(history)
+})
+
+it('coalesceRoles collapses a run longer than two', () => {
+  const out = coalesceRoles([msg('user', 'a'), msg('user', 'b'), msg('user', 'c')])
+  expect(out).toEqual([msg('user', 'a\n\nb\n\nc')])
+})
+
+it('coalesceRoles guarantees an alternating payload out of foldSystem', () => {
+  // realistic path: history with a duplicated user turn → fold → coalesce
+  const payload = coalesceRoles(foldSystem([
+    msg('system', 'sys'), msg('user', 'u1'), msg('user', 'u2'), msg('assistant', 'a1'),
+  ]))
+  expect(payload[0]).toEqual(msg('user', 'sys\n\nu1\n\nu2'))
+  const alternates = payload.every((m, i) => i === 0 || m.role !== payload[i - 1].role)
+  expect(alternates).toBe(true)
+})
+
+it('coalesceRoles handles empty and single-message input', () => {
+  expect(coalesceRoles([])).toEqual([])
+  expect(coalesceRoles([msg('user', 'hi')])).toEqual([msg('user', 'hi')])
 })

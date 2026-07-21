@@ -16,6 +16,24 @@ export function foldSystem(history: ChatMessage[]): ChatMessage[] {
   return rest.map((m, j) => (j === i ? { ...m, content: `${system}\n\n${m.content}` } : m))
 }
 
+/**
+ * Merge consecutive same-role messages into one (content joined with a blank
+ * line). Mistral v0.3's template requires strictly alternating roles, but the
+ * persisted history can hold adjacent same-role turns — e.g. two concurrent
+ * turns on one conversation append user_A, user_B before either assistant row
+ * lands, leaving u,u,a,a. Run this last, on the folded payload, so whatever we
+ * send vLLM always alternates. Idempotent on already-alternating input.
+ */
+export function coalesceRoles(history: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  for (const m of history) {
+    const prev = out[out.length - 1]
+    if (prev && prev.role === m.role) prev.content = `${prev.content}\n\n${m.content}`
+    else out.push({ ...m })
+  }
+  return out
+}
+
 /** Keep system message(s) + newest turns that fit maxTokens (approximate). */
 // Note: drops the oldest contiguous prefix. When the budget cut lands mid
 // user/assistant pair, the assistant prefix is dropped too, so the first
