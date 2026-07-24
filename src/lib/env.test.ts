@@ -18,4 +18,10 @@ describe('parseEnv', () => {
   it('throws on missing required', () => {
     expect(() => parseEnv({})).toThrow()
   })
+  it('accepts optional MCP_SERVER_URL', () => {
+    expect(parseEnv(base).MCP_SERVER_URL).toBeUndefined()
+    expect(parseEnv({ ...base, MCP_SERVER_URL: 'http://mcp:8080/mcp' }).MCP_SERVER_URL)
+      .toBe('http://mcp:8080/mcp')
+    expect(() => parseEnv({ ...base, MCP_SERVER_URL: 'not-a-url' })).toThrow()
+  })
 })
