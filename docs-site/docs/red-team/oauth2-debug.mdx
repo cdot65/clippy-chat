@@ -1,0 +1,121 @@
+---
+id: oauth2-debug
+title: The OAuth2 Debug Adapter — walkthrough
+sidebar_label: OAuth2 Debug Adapter
+sidebar_position: 3
+---
+
+# `clippy_redteam_debug_oauth2.py` — the chat adapter, with identity tracing
+
+The full adapter lives at [`redteam/clippy_redteam_debug_oauth2.py`](https://github.com/cdot65/clippy-chat/blob/main/redteam/clippy_redteam_debug_oauth2.py).
+It targets the **same chat endpoint** as the [main chat adapter](/red-team/adapter) — same
+request/response contract, same SSE parsing — but adds a **full trace of the OAuth2
+`client_credentials` exchange** to stderr. Reach for it when a scan is failing at *auth* and you
+need to see exactly what the identity round trip is doing.
+
+## When to use it
+
+Use this variant instead of `clippy_redteam_adapter.py` when:
+
+- Every probe is returning `401` and you cannot tell whether the token is missing, expired, or
+  missing the `clippy-api` scope.
+- The IdP is returning `invalid_client` / `unauthorized_client` / `invalid_scope` and you want
+  the raw error body, not a bare `KeyError` on `access_token`.
+- You are onboarding a *new* Keycloak client and want to confirm the request line, form fields,
+  and response headers before trusting the token.
+
+Once auth is healthy, switch back to the plain chat adapter — the trace is noise in a real run
+(and can print secrets; see below).
+
+## The two toggles
+
+```python
+DEBUG_OAUTH = True      # emit the full client_credentials trace to stderr
+REDACT_SECRETS = True   # mask client_secret + access_token in that trace
+```
+
+- **`DEBUG_OAUTH`** turns the trace on or off. Leave it `True` while debugging; set it `False`
+  for a clean run.
+- **`REDACT_SECRETS`** masks the `client_secret` and `access_token` — showing their length and
+  token type (JWT vs opaque) so you can confirm they are present and well-formed **without**
+  leaking the credential into whatever captures stderr.
+
+:::danger Do not ship `REDACT_SECRETS = False`
+Setting `REDACT_SECRETS = False` prints the client secret and a live bearer token **in full**.
+That is for a throwaway local debug session only — never in a shared or recorded environment.
+:::
+
+## What the trace shows
+
+With `DEBUG_OAUTH` on, `authenticate()` dumps the entire identity round trip to stderr:
+
+```text
+[clippy-oauth] ========== OAuth2 client_credentials exchange ==========
+[clippy-oauth] --> POST https://auth.example.com/realms/myrealm/protocol/openid-connect/token
+[clippy-oauth]     content-type: application/x-www-form-urlencoded
+[clippy-oauth]     form.grant_type    = client_credentials
+[clippy-oauth]     form.client_id     = clippy-m2m
+[clippy-oauth]     form.client_secret = <redacted len=36>
+[clippy-oauth]     form.scope         = clippy-api
+[clippy-oauth] <-- HTTP 200
+[clippy-oauth]     resp.header.content-type = application/json
+[clippy-oauth]     body.access_token = eyJhbGciOiJ... <redacted len=1180 JWT>
+[clippy-oauth]     body.expires_in = 300
+[clippy-oauth]     -> caching token: ttl=270s (expires_in=300s)
+[clippy-oauth] ========================================================
+```
+
+The two failure modes it makes obvious:
+
+1. **Wrong body encoding.** The token endpoint wants a **form** body (`data=`), not JSON. The
+   trace shows `content-type: application/x-www-form-urlencoded` and the individual form fields
+   so a `json=` mistake is visible immediately.
+2. **A non-2xx token response.** On `invalid_client` / `invalid_scope`, the IdP returns non-2xx
+   with a JSON error body and no `access_token`. The adapter loudly dumps that raw body instead
+   of letting a bare `KeyError` on `access_token` bury the real cause.
+
+## The tracing helpers
+
+```python
+def _dbg(message):
+    if DEBUG_OAUTH:
+        print(f"[clippy-oauth] {message}", file=sys.stderr)
+
+def _mask_secret(value):
+    if value is None:
+        return "<missing>"
+    if not REDACT_SECRETS:
+        return value
+    return f"<redacted len={len(value)}>"
+
+def _mask_token(value):
+    if not isinstance(value, str):
+        return value
+    if not REDACT_SECRETS:
+        return value
+    kind = "JWT" if value.count(".") == 2 else "opaque"
+    tail = value[-4:] if len(value) > 16 else ""
+    return f"{value[:12]}...{tail} <redacted len={len(value)} {kind}>"
+```
+
+- **`_dbg`** writes to **stderr** so the trace never contaminates the adapter's actual output
+  stream. If your platform only surfaces stdout, drop the `file=sys.stderr` argument.
+- **`_mask_secret` / `_mask_token`** keep enough signal to debug (length, JWT-vs-opaque,
+  prefix/suffix) while hiding the secret itself — unless you have explicitly disabled redaction.
+
+`_dbg_response()` iterates the response headers defensively (every field via `getattr`, header
+iteration wrapped) so a missing attribute degrades the trace rather than breaking
+`authenticate()`.
+
+## Everything else is the chat adapter
+
+`pre_process`, `post_process`, and the SSE parsing are **identical** to
+`clippy_redteam_adapter.py` — same `POST /api/chat`, same fresh-UUID-per-probe, same
+`event: delta` concatenation. See **[The Chat Adapter walkthrough](/red-team/adapter)** for the
+line-by-line on those. This page is only about the identity-tracing layer bolted on top.
+
+:::tip Keep two adapters, not one flag
+Shipping the trace as a *separate* file — rather than a `DEBUG` flag on the main adapter — keeps
+the production adapter free of any code path that can print a credential. Debug with this one;
+run with the plain one.
+:::

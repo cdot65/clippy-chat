@@ -57,9 +57,27 @@ authenticate(context)          pre_process(context, input)        post_process(c
 | `pre_process` | `src/routes/api/chat.ts` → `src/lib/chat/service.ts` (`ensureConversation`) | Body `{conversationId, message}`; a fresh UUID auto-creates the conversation |
 | `post_process` | `sse()` helper in `src/routes/api/chat.ts` | `event: delta` → reply tokens; `event: done` → ignore; `event: error` → mid-stream failure (still HTTP 200) |
 
+## The adapter catalog
+
+The repo ships **three** custom adapters. They fall into two families by what they attack —
+the **model** (through the chat app) or the **tools** (through the MCP server directly). Pick by
+target:
+
+| Adapter | Attacks | Endpoint | Auth | Transport | Use when |
+| --- | --- | --- | --- | --- | --- |
+| [`clippy_redteam_adapter.py`](/red-team/adapter) | The **model** | `POST /api/chat` | Keycloak M2M bearer | SSE stream | Default. Jailbreak / harmful-content probes against Clippy the chatbot. |
+| [`clippy_redteam_debug_oauth2.py`](/red-team/oauth2-debug) | The **model** | `POST /api/chat` | Keycloak M2M bearer | SSE stream | Same as above, but auth is failing and you need a full OAuth2 trace. |
+| [`clippy_redteam_mcp.py`](/red-team/mcp-adapter) | The **tools** | `POST …/mcp` (JSON-RPC) | None (cluster-internal) | JSON-RPC / SSE | Fuzz a tool's inputs directly — `web_search`, `get_daily_news`, or the high-blast-radius `scm_config`. |
+
+The two chat adapters share one request/response contract (the sections below describe it); they
+differ only in identity tracing. The MCP adapter is a different shape entirely — it injects the
+prompt into a tool argument and bypasses the model.
+
 ## Read next
 
-- **[The Adapter](/red-team/adapter)** — a line-by-line walkthrough of `clippy_redteam_adapter.py`.
+- **[The Chat Adapter](/red-team/adapter)** — line-by-line walkthrough of `clippy_redteam_adapter.py`.
+- **[The OAuth2 Debug Adapter](/red-team/oauth2-debug)** — the chat adapter with identity tracing.
+- **[The MCP Tool Adapter](/red-team/mcp-adapter)** — driving the MCP tool server directly.
 - **[Running a Scan](/red-team/running-a-scan)** — the vars and secrets to configure, and how to drive it.
 
 :::note Placeholders only

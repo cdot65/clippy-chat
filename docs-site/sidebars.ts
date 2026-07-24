@@ -13,7 +13,12 @@ const sidebars: SidebarsConfig = {
       label: 'Red-Team Adapter',
       collapsed: false,
       link: {type: 'doc', id: 'red-team/overview'},
-      items: ['red-team/adapter', 'red-team/running-a-scan'],
+      items: [
+        'red-team/adapter',
+        'red-team/oauth2-debug',
+        'red-team/mcp-adapter',
+        'red-team/running-a-scan',
+      ],
     },
     'architecture',
     {
