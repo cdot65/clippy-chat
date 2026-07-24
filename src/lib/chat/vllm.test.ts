@@ -21,6 +21,25 @@ const sse = (lines: string[]) => new Response(
     start(c) { lines.forEach((l) => c.enqueue(new TextEncoder().encode(`data: ${l}\n\n`))); c.close() },
   }), { status: 200 })
 
+const mockSseResponse = (frames: unknown[]) => {
+  vi.stubGlobal('fetch', vi.fn(async () => sse([
+    ...frames.map((f) => JSON.stringify(f)),
+    '[DONE]',
+  ])))
+}
+
+const collect = async (it: AsyncGenerator<unknown>) => {
+  const o = []
+  for await (const e of it) o.push(e)
+  return o
+}
+
+const lastFetchBody = () => {
+  const fetchMock = vi.mocked(fetch)
+  const [, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit]
+  return init.body as string
+}
+
 it('yields deltas then usage', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => sse([
     JSON.stringify({ choices: [{ delta: { content: 'Hel' } }] }),
@@ -59,4 +78,24 @@ it('parses a frame fragmented across chunks', async () => {
   const events = []
   for await (const e of chatStream([{ role: 'user', content: 'hi' }])) events.push(e)
   expect(events).toEqual([{ type: 'delta', content: 'Hi' }])
+})
+
+it('accumulates streamed tool_call deltas and yields one tool_calls event', async () => {
+  mockSseResponse([
+    { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1',
+      function: { name: 'get_weather', arguments: '{"loc' } }] } }] },
+    { choices: [{ delta: { tool_calls: [{ index: 0,
+      function: { arguments: 'ation":"Houston"}' } }] } }] },
+    { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+  ])
+  const events = await collect(chatStream([{ role: 'user', content: 'weather?' }],
+    { tools: [{ type: 'function', function: { name: 'get_weather', parameters: {} } }] }))
+  expect(events).toContainEqual({ type: 'tool_calls', calls: [
+    { id: 'call_1', name: 'get_weather', arguments: '{"location":"Houston"}' }] })
+})
+
+it('omits tools key from request body when no tools given', async () => {
+  mockSseResponse([{ choices: [{ delta: { content: 'hi' } }] }])
+  await collect(chatStream([{ role: 'user', content: 'hi' }]))
+  expect(JSON.parse(lastFetchBody())).not.toHaveProperty('tools')
 })
