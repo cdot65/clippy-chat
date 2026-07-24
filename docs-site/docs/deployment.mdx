@@ -17,8 +17,12 @@ The `Dockerfile` is a two-stage build:
    `drizzle/`, and `scripts/migrate.mjs`. `EXPOSE 3000`, `CMD ["node", ".output/server/index.mjs"]`.
 
 ```bash
-docker build -t ghcr.io/cdot65/clippy-chat:latest .
+# Talos is amd64 — Dockerfiles pin linux/amd64; keep the flag explicit when building
+docker build --platform linux/amd64 -t ghcr.io/cdot65/clippy-chat:latest .
 docker push ghcr.io/cdot65/clippy-chat:latest
+
+docker build --platform linux/amd64 -t ghcr.io/cdot65/clippy-mcp:latest mcp-server
+docker push ghcr.io/cdot65/clippy-mcp:latest
 ```
 
 :::note Migrations run separately
