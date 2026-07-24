@@ -45,17 +45,15 @@ def pre_process(context, inference_input):
 
     arguments = {**static, arg_name: prompt}
     headers = _mcp_headers(session_id)
-    return PreProcessResult(
-        url=endpoint,
-        method="POST",
-        headers=headers,
-        json_body={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {"name": tool_name, "arguments": arguments},
-        },
-    )
+    # The platform serializes the `body` field, not `json_body` — a json_body is
+    # dropped and the server sees an empty request. Serialize the tools/call here.
+    body = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": tool_name, "arguments": arguments},
+    })
+    return PreProcessResult(url=endpoint, method="POST", headers=headers, body=body)
 
 
 def post_process(context, raw_response):

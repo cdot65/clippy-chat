@@ -38,19 +38,17 @@ _MAX_RAW = 4000  # cap echoed body so an HTML/binary error page can't flood the 
 
 
 def pre_process(context, inference_input):
-    """Forward the prompt to the MCP endpoint as a JSON-RPC request body.
+    """Forward the prompt to the MCP endpoint verbatim as the JSON-RPC body.
 
-    Valid JSON goes out structured (json_body); anything else goes out as a raw
-    body so malformed-envelope probes are delivered unaltered.
+    Raw mode: the prompt IS the request body. It is sent byte-for-byte via the
+    platform's `body` field — valid or malformed — so protocol-layer probes
+    reach the server exactly as typed. (The platform serializes `body`, not
+    `json_body`; a json_body is silently dropped and the server sees an empty
+    request — a -32700 parse error.)
     """
     endpoint = context.vars["endpoint"]
-    prompt = inference_input.prompt
     headers = {"Content-Type": "application/json", "Accept": _ACCEPT}
-
-    parsed, ok = _try_json(prompt)
-    if ok:
-        return PreProcessResult(url=endpoint, method="POST", headers=headers, json_body=parsed)
-    return PreProcessResult(url=endpoint, method="POST", headers=headers, body=prompt, json_body=None)
+    return PreProcessResult(url=endpoint, method="POST", headers=headers, body=inference_input.prompt)
 
 
 def post_process(context, raw_response):
@@ -78,16 +76,6 @@ def post_process(context, raw_response):
 
 
 # --- helpers ------------------------------------------------------------------
-
-
-def _try_json(prompt):
-    """Parse the prompt as JSON. Returns (value, ok) — ok False when it isn't JSON."""
-    if not isinstance(prompt, str):
-        return None, False
-    try:
-        return json.loads(prompt), True
-    except (ValueError, TypeError):
-        return None, False
 
 
 def _header(response, name: str) -> str | None:
