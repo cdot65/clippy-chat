@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// int test: requires `docker compose up -d mcp` (skipped otherwise, matching repo int-test convention)
+// int test: requires `docker compose up -d mcp` (fails without it, like the other *.int.test.ts suites)
 vi.mock('~/lib/env', () => ({ env: () => ({ MCP_SERVER_URL: 'http://localhost:8080/mcp' }) }))
 import { getMcpTools, callMcpTool, _resetMcpForTests } from './mcp'
 

@@ -1,6 +1,6 @@
-import json
 import respx
 from httpx import Response
+
 from clippy_mcp.tools.polymarket import polymarket_bets
 
 URL = "https://gamma-api.polymarket.com/markets"

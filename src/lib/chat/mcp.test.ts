@@ -40,6 +40,12 @@ describe('getMcpTools', () => {
     connect.mockRejectedValue(new Error('ECONNREFUSED'))
     expect(await getMcpTools()).toEqual([])
   })
+  it('bounds connect and listTools with timeouts (hung server must not hang chat)', async () => {
+    listTools.mockResolvedValue({ tools: [] })
+    await getMcpTools()
+    expect(connect.mock.calls[0][1]).toEqual({ timeout: 10_000 })
+    expect(listTools.mock.calls[0][1]).toEqual({ timeout: 10_000 })
+  })
 })
 
 describe('callMcpTool', () => {
@@ -50,5 +56,10 @@ describe('callMcpTool', () => {
   it('returns error text instead of throwing', async () => {
     callTool.mockRejectedValue(new Error('boom'))
     expect(await callMcpTool('get_weather', {})).toMatch(/tool call failed/i)
+  })
+  it('bounds tool execution with a timeout', async () => {
+    callTool.mockResolvedValue({ content: [] })
+    await callMcpTool('get_weather', {})
+    expect(callTool.mock.calls[0][2]).toEqual({ timeout: 30_000 })
   })
 })

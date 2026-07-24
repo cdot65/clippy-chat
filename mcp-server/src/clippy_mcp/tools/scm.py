@@ -64,7 +64,7 @@ async def scm_config(resource: str, action: str, payload: dict | None = None) ->
         return {"deleted": p["id"], "note": "candidate config — push manually in SCM UI"}
     except RuntimeError as e:
         return {"error": str(e)}
-    except Exception as e:  # SDK raises per-API errors; surface, never traceback
+    except Exception as e:  # noqa: BLE001 — SDK raises many per-API types; surface as text, never traceback
         return {"error": f"SCM {action} {resource} failed: {e}"}
 
 

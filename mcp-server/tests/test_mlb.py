@@ -1,5 +1,6 @@
 import respx
 from httpx import Response
+
 from clippy_mcp.tools.mlb import get_mlb_scores
 
 URL = "https://statsapi.mlb.com/api/v1/schedule"
