@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { requireUser } from '~/lib/auth/middleware'
+import { agentStream } from '~/lib/chat/agent'
 import { coalesceRoles, foldSystem, trimHistory } from '~/lib/chat/history'
 import { NotFoundError, appendMessage, ensureConversation, loadHistory } from '~/lib/chat/service'
-import { chatStream } from '~/lib/chat/vllm'
 
 const bodySchema = z.object({ conversationId: z.uuid(), message: z.string().min(1).max(8000) })
 const CONTEXT_BUDGET = 8192 - 1024 // reserve for completion
@@ -38,9 +38,11 @@ export const Route = createFileRoute('/api/chat')({
             try { controller.enqueue(encoder.encode(chunk)) } catch { /* consumer gone */ }
           }
           try {
-            for await (const ev of chatStream(history, request.signal)) {
+            for await (const ev of agentStream(history, request.signal)) {
               if (ev.type === 'delta') { content += ev.content; safeEnqueue(sse('delta', { content: ev.content })) }
-              else usage = { promptTokens: ev.promptTokens, completionTokens: ev.completionTokens }
+              else if (ev.type === 'tool_use') safeEnqueue(sse('tool_use', { name: ev.name }))
+              else if (ev.type === 'tool_calls') { /* consumed inside agentStream; never reaches here */ }
+              else if (ev.type === 'usage') usage = { promptTokens: ev.promptTokens, completionTokens: ev.completionTokens }
             }
             const row = await appendMessage(conversationId, 'assistant', content, usage)
             safeEnqueue(sse('done', { messageId: row.id, ...usage }))
