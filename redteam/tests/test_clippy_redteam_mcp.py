@@ -5,18 +5,11 @@ Platform symbols are injected onto the module (matching runtime injection).
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-# Adapter lives next to this package: redteam/clippy_redteam_mcp.py
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "redteam"))
-
-import clippy_redteam_mcp as adapter  # noqa: E402
+import clippy_redteam_mcp as adapter  # path set up in conftest.py
 
 
 class PreProcessResult:
@@ -206,6 +199,40 @@ def test_static_args_string_and_bad_json():
     assert adapter._static_args({"static_args": "not-json"}) == {}
     assert adapter._static_args({}) == {}
     assert adapter._static_args({"static_args": {"x": True}}) == {"x": True}
+
+
+def test_extract_jsonrpc_matches_request_id_over_first():
+    # A stateful server can interleave frames; prefer the one whose id matches
+    # the request, not merely the first frame carrying a result.
+    frame = (
+        'data: {"jsonrpc":"2.0","id":99,"result":{"content":[{"type":"text","text":"stale"}]}}\n\n'
+        'data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"mine"}]}}\n\n'
+    )
+    raw = SimpleNamespace(headers={"content-type": "text/event-stream"}, json_body=None, text=frame)
+    assert adapter._extract_jsonrpc(raw, expected_id=1)["result"]["content"][0]["text"] == "mine"
+    # no expected id -> first result frame (back-compat)
+    assert adapter._extract_jsonrpc(raw)["result"]["content"][0]["text"] == "stale"
+
+
+def test_session_id_preserved_when_notification_fails():
+    calls = {"n": 0}
+
+    class HalfHttp:
+        def post(self, url, headers=None, json=None, **_):
+            calls["n"] += 1
+            if json.get("method") == "initialize":
+                return SimpleNamespace(status_code=200, headers={"Mcp-Session-Id": "sess-xyz"},
+                                       text="", json_body={"result": {"protocolVersion": "2024-11-05"}})
+            raise RuntimeError("notification dropped")
+
+    ctx = _ctx(
+        vars={"endpoint": "http://mcp/mcp", "tool_name": "get_weather", "arg_name": "location"},
+        http=HalfHttp(),
+    )
+    out = adapter.pre_process(ctx, _prompt("x"))
+    # session captured at initialize must survive a failed initialized notification
+    assert out.headers.get("Mcp-Session-Id") == "sess-xyz"
+    assert out.json_body["method"] == "tools/call"
 
 
 def test_post_process_empty_content_falls_back_to_dumps():

@@ -38,9 +38,8 @@ def pre_process(context, inference_input):
     static = _static_args(context.vars)
 
     session_id = None
-    protocol = _PROTOCOL_VERSION
     try:
-        session_id, protocol = _handshake(context, endpoint)
+        session_id = _handshake(context, endpoint)
     except Exception as exc:  # noqa: BLE001 — best-effort; probe must still fire
         _dbg(f"handshake failed: {exc!r}; continuing with tools/call")
 
@@ -70,7 +69,7 @@ def post_process(context, raw_response):
         detail = _http_error_detail(raw_response)
         return PostProcessResult(output=f"[adapter error {status}] {detail}")
 
-    envelope = _extract_jsonrpc(raw_response)
+    envelope = _extract_jsonrpc(raw_response, expected_id=1)
     if not envelope:
         text = (getattr(raw_response, "text", None) or "").strip()
         return PostProcessResult(output=text or "[adapter error] empty MCP response")
@@ -103,6 +102,11 @@ def post_process(context, raw_response):
 
 
 def _dbg(message):
+    """Trace one handshake/RPC step to stderr when DEBUG_MCP is on.
+
+    stderr keeps the trace out of the adapter's output stream. Unlike the oauth
+    adapter there are no secrets to redact here — the MCP server is unauthenticated.
+    """
     if DEBUG_MCP:
         print(f"[clippy-mcp] {message}", file=sys.stderr)
 
@@ -125,6 +129,10 @@ def _static_args(vars_map) -> dict:
 
 
 def _mcp_headers(session_id: str | None) -> dict:
+    """Headers every MCP request needs. Streamable HTTP requires the caller to
+    accept both a single JSON reply and an SSE stream; a session id is echoed
+    back only once the server has issued one at initialize.
+    """
     headers = {
         "Content-Type": "application/json",
         "Accept": _ACCEPT,
@@ -135,22 +143,29 @@ def _mcp_headers(session_id: str | None) -> dict:
 
 
 def _header(response, name: str) -> str | None:
+    """Case-insensitive header lookup, defensive about the platform's response shape.
+
+    The response object is platform-defined; its `.headers` may be a dict or an
+    absent attribute, so every access degrades to None rather than raising.
+    """
     headers = getattr(response, "headers", None) or {}
     try:
-        # case-insensitive
         for key, value in dict(headers).items():
             if str(key).lower() == name.lower():
                 return value
     except (TypeError, ValueError):
         pass
-    try:
-        return headers.get(name) or headers.get(name.lower())
-    except Exception:  # noqa: BLE001
-        return None
+    return None
 
 
-def _handshake(context, endpoint: str) -> tuple[str | None, str]:
-    """initialize → notifications/initialized. Returns (session_id, protocolVersion)."""
+def _handshake(context, endpoint: str) -> str | None:
+    """initialize → notifications/initialized. Returns the session id (or None).
+
+    The `initialize` response is the part that matters: it issues the session id
+    (on a stateful server) and the negotiated protocolVersion. The follow-up
+    `initialized` notification is fire-and-forget — a stateless server ignores
+    it, so its failure must NOT discard the session id we already captured.
+    """
     init_headers = _mcp_headers(None)
     init_body = {
         "jsonrpc": "2.0",
@@ -170,85 +185,96 @@ def _handshake(context, endpoint: str) -> tuple[str | None, str]:
         raise RuntimeError(f"initialize HTTP {status}")
 
     session_id = _header(init_res, "Mcp-Session-Id")
-    protocol = _PROTOCOL_VERSION
-    envelope = _extract_jsonrpc(init_res)
+    envelope = _extract_jsonrpc(init_res, expected_id=0)
     result = envelope.get("result") if isinstance(envelope, dict) else None
-    if isinstance(result, dict) and result.get("protocolVersion"):
-        protocol = result["protocolVersion"]
+    protocol = result.get("protocolVersion") if isinstance(result, dict) else _PROTOCOL_VERSION
 
-    notif_headers = _mcp_headers(session_id)
-    notif_body = {
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized",
-        "params": {},
-    }
+    # Best-effort: preserve the captured session id even if the notification fails.
+    notif_body = {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
     _dbg(f"--> notifications/initialized session={session_id!r} protocol={protocol}")
-    notif_res = context.http.post(endpoint, headers=notif_headers, json=notif_body)
-    nstatus = getattr(notif_res, "status_code", None)
-    _dbg(f"<-- notifications/initialized HTTP {nstatus}")
-    if nstatus is not None and nstatus >= 400:
-        raise RuntimeError(f"notifications/initialized HTTP {nstatus}")
+    try:
+        notif_res = context.http.post(endpoint, headers=_mcp_headers(session_id), json=notif_body)
+        _dbg(f"<-- notifications/initialized HTTP {getattr(notif_res, 'status_code', None)}")
+    except Exception as exc:  # noqa: BLE001 — notification is fire-and-forget
+        _dbg(f"notifications/initialized failed: {exc!r}; keeping session {session_id!r}")
 
-    return session_id, protocol
+    return session_id
 
 
-def _extract_jsonrpc(raw_response) -> dict:
-    """Parse a JSON-RPC object from application/json or text/event-stream."""
-    content_type = (_header(raw_response, "content-type") or "").lower()
+def _extract_jsonrpc(raw_response, expected_id=None) -> dict:
+    """Parse a JSON-RPC response object from application/json OR text/event-stream.
 
-    body = getattr(raw_response, "json_body", None)
-    if body is None:
-        json_fn = getattr(raw_response, "json", None)
-        if callable(json_fn):
-            try:
-                body = json_fn()
-            except Exception:  # noqa: BLE001
-                body = None
-    if isinstance(body, dict) and ("result" in body or "error" in body or body.get("jsonrpc")):
-        if "application/json" in content_type or content_type == "" or body:
-            # Prefer structured json when present
-            if "result" in body or "error" in body:
-                return body
-
-    text = getattr(raw_response, "text", None) or ""
-    if "text/event-stream" in content_type or text.lstrip().startswith("event:") or "data:" in text:
-        parsed = _parse_sse_jsonrpc(text)
-        if parsed:
-            return parsed
-
-    if isinstance(body, dict):
+    A streamable-HTTP POST answers as either a single JSON object or an SSE
+    stream of frames; a stateful server may interleave progress/notification
+    frames, so when `expected_id` is given we return the response whose `id`
+    matches the request, falling back to the first result/error otherwise.
+    """
+    body = _response_json(raw_response)
+    if isinstance(body, dict) and ("result" in body or "error" in body):
         return body
 
+    text = getattr(raw_response, "text", None) or ""
+    parsed = _parse_sse_jsonrpc(text, expected_id)
+    if parsed:
+        return parsed
+
+    return body if isinstance(body, dict) else {}
+
+
+def _response_json(raw_response):
+    """Best-effort read of a JSON body from the platform's response object."""
+    body = getattr(raw_response, "json_body", None)
+    if body is not None:
+        return body
+    json_fn = getattr(raw_response, "json", None)
+    if callable(json_fn):
+        try:
+            return json_fn()
+        except (ValueError, TypeError):
+            return None
+    text = getattr(raw_response, "text", None) or ""
     if text.strip().startswith("{"):
         try:
-            obj = json.loads(text)
-            if isinstance(obj, dict):
-                return obj
+            return json.loads(text)
         except (ValueError, TypeError):
-            pass
-    return {}
+            return None
+    return None
 
 
-def _parse_sse_jsonrpc(text: str) -> dict:
-    """First SSE data: payload that carries result or error."""
+def _parse_sse_jsonrpc(text: str, expected_id=None) -> dict:
+    """Scan SSE `data:` frames for the JSON-RPC response.
+
+    Returns the frame whose `id` matches `expected_id` when set; otherwise the
+    first frame carrying a `result` or `error`.
+    """
+    fallback = {}
     for frame in text.split("\n\n"):
-        data_lines = []
-        for line in frame.splitlines():
-            if line.startswith("data:"):
-                data_lines.append(line[len("data:"):].strip())
-        if not data_lines:
+        data = "\n".join(
+            line[len("data:"):].strip()
+            for line in frame.splitlines()
+            if line.startswith("data:")
+        )
+        if not data:
             continue
-        payload = "\n".join(data_lines)
         try:
-            obj = json.loads(payload)
+            obj = json.loads(data)
         except (ValueError, TypeError):
             continue
-        if isinstance(obj, dict) and ("result" in obj or "error" in obj):
+        if not (isinstance(obj, dict) and ("result" in obj or "error" in obj)):
+            continue
+        if expected_id is not None and obj.get("id") == expected_id:
             return obj
-    return {}
+        if not fallback:
+            fallback = obj
+    return fallback if expected_id is None else (fallback or {})
 
 
 def _http_error_detail(raw_response) -> str:
+    """Pull a human-readable detail from a non-2xx response for the error string.
+
+    Prefers a JSON error envelope ({error} or {message}); falls back to truncated
+    raw text so an unexpected error shape is still debuggable, never blank.
+    """
     body = getattr(raw_response, "json_body", None)
     if isinstance(body, dict):
         err = body.get("error")
