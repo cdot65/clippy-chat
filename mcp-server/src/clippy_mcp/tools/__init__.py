@@ -8,6 +8,7 @@ def register_all(mcp: FastMCP) -> None:
     if _registered:  # create_app() may run twice (module import + tests)
         return
     _registered = True
-    from clippy_mcp.tools import weather
+    from clippy_mcp.tools import news, weather
 
     weather.register(mcp)
+    news.register(mcp)
