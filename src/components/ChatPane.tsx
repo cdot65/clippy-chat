@@ -34,6 +34,7 @@ export function ChatLayout({ conversationId, onFirstSend }: { conversationId: st
   const [streaming, setStreaming] = useState<string | null>(null) // in-flight assistant text
   const [pendingUser, setPendingUser] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null) // conversation id used for the in-flight/failed send, so retry targets the same one
+  const [activeTool, setActiveTool] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -57,14 +58,15 @@ export function ChatLayout({ conversationId, onFirstSend }: { conversationId: st
     setError(null); setPendingUser(text); setPendingId(id); setStreaming('')
     let acc = ''
     await streamChat(id, text, {
-      delta: (t) => { acc += t; setStreaming(acc) },
+      toolUse: (name) => setActiveTool(name),
+      delta: (t) => { setActiveTool(null); acc += t; setStreaming(acc) },
       done: () => {
-        setStreaming(null); setPendingUser(null); setPendingId(null)
+        setActiveTool(null); setStreaming(null); setPendingUser(null); setPendingId(null)
         qc.invalidateQueries({ queryKey: ['messages', id] })
         qc.invalidateQueries({ queryKey: ['conversations'] })
         if (!conversationId) onFirstSend?.(id)
       },
-      error: (msg) => { setStreaming(null); setError(msg) },
+      error: (msg) => { setActiveTool(null); setStreaming(null); setError(msg) },
     })
   }
 
@@ -109,7 +111,9 @@ export function ChatLayout({ conversationId, onFirstSend }: { conversationId: st
             {streaming === '' && (
               <div className="typing">
                 <BotBadge />
-                <span className="typing-dots"><span /><span /><span /></span>
+                {activeTool
+                  ? <div className="tool-chip">🔧 {activeTool}…</div>
+                  : <span className="typing-dots"><span /><span /><span /></span>}
               </div>
             )}
             {error && (
