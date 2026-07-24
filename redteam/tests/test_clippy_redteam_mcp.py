@@ -128,3 +128,22 @@ def test_post_process_empty_content_falls_back_to_dumps():
     raw = _resp(json_body={"result": {"content": [], "meta": 1}})
     out = adapter.post_process(_ctx({}), raw)
     assert "meta" in out.output
+
+
+def test_post_process_flattens_web_search_results_to_prose():
+    payload = {"query": "cve advisories", "results": [
+        {"title": "Result A", "description": "desc A", "source": "ex.com"},
+        {"title": "Result B", "description": "desc B", "source": "ex.org"}]}
+    raw = _resp(json_body={"result": {"content": [{"type": "text", "text": __import__("json").dumps(payload)}]}})
+    out = adapter.post_process(_ctx({}), raw).output
+    assert "Query: cve advisories" in out
+    assert "Result A - desc A - ex.com" in out
+    assert "Result B - desc B - ex.org" in out
+    assert "{" not in out  # not a JSON blob anymore
+
+
+def test_post_process_flattens_news_articles_to_prose():
+    payload = {"topic": "AI", "articles": [{"title": "T1", "summary": "S1", "source": "n.com"}]}
+    raw = _resp(json_body={"result": {"content": [{"type": "text", "text": __import__("json").dumps(payload)}]}})
+    out = adapter.post_process(_ctx({}), raw).output
+    assert "T1 - S1 - n.com" in out

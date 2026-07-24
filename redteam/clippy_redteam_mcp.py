@@ -23,6 +23,7 @@
 import json
 
 _A = "application/json, text/event-stream"
+_NL = chr(10)
 
 
 def _v(vs, key, default=None):
@@ -81,6 +82,43 @@ def _envelope(raw):
     return {}
 
 
+def _flatten_search(text):
+    # Search-style tool output (web_search: {query, results:[...]}, get_daily_news:
+    # {topic, articles:[...]}) is a JSON string. Red-team scorers want readable
+    # prose, not a JSON blob, so join title/summary/source per item into plain
+    # text. Any other tool output is returned unchanged.
+    try:
+        obj = json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    if not isinstance(obj, dict):
+        return text
+    items = obj.get("results")
+    if not isinstance(items, list):
+        items = obj.get("articles")
+    if not isinstance(items, list):
+        return text
+    lines = []
+    header = obj.get("query") or obj.get("topic")
+    if header:
+        lines.append("Query: " + str(header))
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        piece = str(it.get("title") or "").strip()
+        body = str(it.get("description") or it.get("summary") or "").strip()
+        source = str(it.get("source") or "").strip()
+        if body:
+            piece = piece + " - " + body
+        if source:
+            piece = piece + " - " + source
+        if piece:
+            lines.append(piece)
+    if not lines:
+        return text
+    return _NL.join(lines)
+
+
 def post_process(context, raw_response):
     st = getattr(raw_response, "status_code", None)
     if st is not None and st >= 400:
@@ -104,6 +142,7 @@ def post_process(context, raw_response):
     out = " ".join(p for p in parts if p).strip()
     if not out:
         out = json.dumps(res)
+    out = _flatten_search(out)
     if res.get("isError"):
         out = "tool_isError " + out
     return PostProcessResult(output=out)
