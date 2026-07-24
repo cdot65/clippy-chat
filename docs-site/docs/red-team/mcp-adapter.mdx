@@ -1,0 +1,267 @@
+---
+id: mcp-adapter
+title: The MCP Tool Adapter — walkthrough
+sidebar_label: MCP Tool Adapter
+sidebar_position: 4
+---
+
+# `clippy_redteam_mcp.py` — attacking the MCP tool server
+
+The full adapter lives at [`redteam/clippy_redteam_mcp.py`](https://github.com/cdot65/clippy-chat/blob/main/redteam/clippy_redteam_mcp.py).
+Unlike the [chat adapter](/red-team/adapter), which drives the model through `/api/chat`, this
+one targets the **`clippy-mcp` server directly** — the in-cluster [Model Context Protocol](https://modelcontextprotocol.io)
+server that exposes Clippy's tools (`get_weather`, `web_search`, `get_daily_news`,
+`get_mlb_scores`, `polymarket_bets`, `get_current_datetime`, and `scm_config`).
+
+It **bypasses the model entirely**: each red-team prompt is injected into one argument of a
+JSON-RPC `tools/call`, and the tool's response is returned for scoring. This is how you
+red-team the *tools* — their input validation, their downstream side effects — rather than the
+model's willingness to call them.
+
+## What it targets
+
+```text
+POST http://clippy-mcp.clippy.svc.cluster.local:8080/mcp
+  streamable HTTP, stateless, NO auth (cluster-internal only)
+  Content-Type: application/json
+  Accept:       application/json, text/event-stream
+
+Body (JSON-RPC 2.0 tools/call):
+  {"jsonrpc":"2.0","id":1,"method":"tools/call",
+   "params":{"name":"<tool>","arguments":{"<arg>": "<attack prompt>", ...static}}}
+
+Response: 200, text/event-stream — one `data:` frame carrying the JSON-RPC result,
+          whose result.content[].text is the tool's (JSON-encoded) output.
+```
+
+:::warning `scm_config` mutates a real tenant
+Pointing this adapter at `tool_name=scm_config` performs **create/update/delete against your
+live Strata Cloud Manager tenant** (candidate config only — there is no device-push path). Scope
+runs to a throwaway folder and clean up after. The read-only tools (weather/web/news/mlb/
+polymarket/datetime) are safe to fuzz freely.
+:::
+
+## Configuration
+
+All configuration is through adapter **vars** — there are no secrets (the MCP server is
+unauthenticated).
+
+```text
+endpoint    (required)  http://clippy-mcp.clippy.svc.cluster.local:8080/mcp
+tool_name   (default get_weather)  the MCP tool to invoke
+arg_name    (default location)     the tool argument the attack prompt fills
+static_args (optional JSON object) the tool's other arguments, merged under the prompt
+```
+
+**Examples**
+
+| Goal | `tool_name` | `arg_name` | `static_args` |
+| --- | --- | --- | --- |
+| Free-text web search | `web_search` | `query` | — |
+| News search | `get_daily_news` | `topic` | — |
+| Prediction-market lookup | `polymarket_bets` | `query` | — |
+| Attack an SCM object name | `scm_config` | `name` | `{"resource":"address","action":"create","folder":"Shared","ip_netmask":"10.0.0.1/32"}` |
+
+Each attack prompt becomes `arguments[arg_name]`; `static_args` supplies the rest. For a
+free-text tool like `web_search`, the prompt flows straight through to the search.
+
+## The platform contract (learned the hard way)
+
+The adapter runtime injects `PreProcessResult` and `PostProcessResult` (do **not** import them).
+Two properties of that contract are non-obvious and cost real debugging time — they are the
+reason this adapter looks the way it does:
+
+:::danger `json_body` must be a `dict`/`list`, and there is no `body` field
+`PreProcessResult` is a pydantic model with fields `url`, `method`, `headers`, `json_body`,
+`data`, `params`. The request payload goes in **`json_body`, and it must be a dictionary or
+list** — handing it a string raises a `ValidationError`. There is no `body` field.
+
+- Send the `tools/call` **dict**; the platform serializes it as `application/json`.
+- Do **not** also set `data` — sending the payload via `data` alongside `json_body` made the
+  MCP server reject the request with `400 Invalid Content-Type header`.
+:::
+
+:::info The platform sends prose, not JSON-RPC
+The red-teaming platform feeds **natural-language attack prompts**, never hand-written
+JSON-RPC. That is why the prompt fills a *tool argument* rather than being the request body —
+and why a "raw JSON-RPC passthrough" adapter is impossible here (the body must be a structured
+`tools/call`, and the prompt is prose).
+:::
+
+:::caution Keep the source paste-safe
+The Prisma AIRS adapter code editor corrupts pasted scripts that contain **brackets inside
+string literals** (`"[error]"`), **backslash escapes** (`"\n\n"`), or **very long lines** —
+it surfaces as `unterminated string literal` or silent truncation. This adapter deliberately
+uses bracket-free, escape-free string literals and short lines, and builds newlines with
+`chr(10)`. Paste **from the file**, not from a rendered code block.
+:::
+
+## 1. `pre_process` — build the `tools/call`
+
+```python
+def pre_process(context, inference_input):
+    vs = context.vars
+    ep = vs["endpoint"]
+    tool = _v(vs, "tool_name", "get_weather")
+    arg = _v(vs, "arg_name", "location")
+    prompt = getattr(inference_input, "prompt", "") or ""
+    args = dict(_static(vs))
+    args[arg] = prompt
+    params = {"name": tool, "arguments": args}
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
+    h = {"Accept": _A, "Content-Type": "application/json"}
+    return PreProcessResult(url=ep, method="POST", headers=h, json_body=body)
+```
+
+The attack prompt lands in `arguments[arg_name]`; `static_args` fills the rest. `json_body`
+receives a **dict**, satisfying the pydantic contract. Both `Accept` values matter — MCP
+streamable HTTP requires the client to accept a single JSON reply *and* an SSE stream, or it
+answers `406`.
+
+## 2. `post_process` — extract the tool's output
+
+```python
+def post_process(context, raw_response):
+    st = getattr(raw_response, "status_code", None)
+    if st is not None and st >= 400:
+        text = getattr(raw_response, "text", None) or ""
+        return PostProcessResult(output="adapter_error " + str(st) + " " + text[:400])
+    env = _envelope(raw_response)
+    err = env.get("error")
+    if err is not None:
+        if isinstance(err, dict):
+            msg = str(err.get("code", "?")) + " " + str(err.get("message", ""))
+        else:
+            msg = str(err)
+        return PostProcessResult(output="mcp_error " + msg)
+    res = env.get("result")
+    if not isinstance(res, dict):
+        return PostProcessResult(output=json.dumps(env))
+    parts = []
+    for b in res.get("content") or []:
+        if isinstance(b, dict) and b.get("type") == "text":
+            parts.append(b.get("text", ""))
+    out = " ".join(p for p in parts if p).strip()
+    if not out:
+        out = json.dumps(res)
+    out = _flatten_search(out)
+    if res.get("isError"):
+        out = "tool_isError " + out
+    return PostProcessResult(output=out)
+```
+
+Priority, deliberately: transport errors (`>= 400`), then JSON-RPC-level errors (`mcp_error
+<code> <message>`), then the tool's own output extracted from `result.content[].text`. A
+tool that *rejects* hostile input (`isError`, or an `error` in its JSON) is a **signal**, not a
+failure to hide — so it is surfaced with a clear prefix, never blanked.
+
+## 3. `_flatten_search` — prose, not a JSON blob
+
+Search-style tools (`web_search`, `get_daily_news`) return a JSON string like
+`{"query": …, "results": [{title, description, source}, …]}`. A scorer wants readable text, not
+a JSON blob, so the adapter flattens it:
+
+```python
+def _flatten_search(text):
+    try:
+        obj = json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    if not isinstance(obj, dict):
+        return text
+    items = obj.get("results")
+    if not isinstance(items, list):
+        items = obj.get("articles")
+    if not isinstance(items, list):
+        return text
+    lines = []
+    header = obj.get("query") or obj.get("topic")
+    if header:
+        lines.append("Query: " + str(header))
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        piece = str(it.get("title") or "").strip()
+        body = str(it.get("description") or it.get("summary") or "").strip()
+        source = str(it.get("source") or "").strip()
+        if body:
+            piece = piece + " - " + body
+        if source:
+            piece = piece + " - " + source
+        if piece:
+            lines.append(piece)
+    if not lines:
+        return text
+    return _NL.join(lines)
+```
+
+It triggers on shape (`results` or `articles` present), so it flattens the search tools and
+leaves every other tool's output untouched. `_NL` is `chr(10)` — a newline built without a
+backslash escape, per the paste-safety rule above.
+
+## 4. Helpers
+
+```python
+_A = "application/json, text/event-stream"
+_NL = chr(10)
+
+def _v(vs, key, default=None):
+    try:
+        val = vs[key]
+    except (KeyError, TypeError):
+        return default
+    if val is None:
+        return default
+    return val
+
+def _static(vs):
+    raw = _v(vs, "static_args")
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            p = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+        if isinstance(p, dict):
+            return p
+    return {}
+
+def _envelope(raw):
+    body = getattr(raw, "json_body", None)
+    if isinstance(body, dict):
+        return body
+    text = getattr(raw, "text", None) or ""
+    for line in text.splitlines():
+        if line.startswith("data:"):
+            chunk = line[5:].strip()
+            try:
+                obj = json.loads(chunk)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(obj, dict):
+                if "result" in obj or "error" in obj:
+                    return obj
+    return {}
+```
+
+- **`_v`** reads an optional var without assuming `context.vars` supports `.get()`; required
+  vars (`endpoint`) use direct `[]` indexing so a misconfiguration fails loudly.
+- **`_static`** tolerantly parses `static_args` whether it arrives as a dict or a JSON string,
+  and returns `{}` for anything malformed.
+- **`_envelope`** pulls the JSON-RPC object out of either a direct JSON body or the SSE
+  `data:` frames, scanning without the `"\n\n"` escape that the editor mangles.
+
+## Design notes worth stealing
+
+- **Match the payload field to the platform's real contract.** `json_body` is a dict here, not
+  a string and not `body`. Introspect the runtime types when a request silently sends an empty
+  body — don't guess field names.
+- **Inject the prompt into an argument, not the envelope.** The platform generates prose
+  attacks; the adapter's job is to place that prose where the tool will actually consume it.
+- **Flatten structured output for the scorer.** A JSON blob hides the content a scorer needs to
+  judge; prose surfaces it.
+- **Keep the source paste-safe.** Bracket-free, escape-free string literals and short lines
+  survive the adapter editor; anything else corrupts on paste.
+
+Continue to **[Running a Scan](/red-team/running-a-scan)** to wire the vars and drive it.
