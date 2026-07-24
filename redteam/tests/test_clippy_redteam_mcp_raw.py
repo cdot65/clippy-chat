@@ -49,18 +49,18 @@ def _prompt(text):
     return SimpleNamespace(prompt=text)
 
 
-def test_valid_json_prompt_forwarded_as_json_body_verbatim():
+def test_valid_json_prompt_forwarded_verbatim_as_body():
     body = '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
     out = adapter.pre_process(_ctx(), _prompt(body))
     assert out.method == "POST"
     assert out.headers["Content-Type"] == "application/json"
     assert "text/event-stream" in out.headers["Accept"]
-    # forwarded verbatim, no injected defaults
-    assert out.json_body == {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-    assert out.body is None
+    # platform serializes `body`, not `json_body` — send the prompt byte-for-byte
+    assert out.body == body
+    assert out.json_body is None
 
 
-def test_malformed_prompt_sent_as_raw_body():
+def test_malformed_prompt_sent_verbatim_as_body():
     junk = '{"jsonrpc":"2.0", broken'
     out = adapter.pre_process(_ctx(), _prompt(junk))
     assert out.body == junk

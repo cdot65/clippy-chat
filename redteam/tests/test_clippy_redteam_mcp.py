@@ -5,6 +5,7 @@ Platform symbols are injected onto the module (matching runtime injection).
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,11 +14,12 @@ import clippy_redteam_mcp as adapter  # path set up in conftest.py
 
 
 class PreProcessResult:
-    def __init__(self, url, method="POST", headers=None, json_body=None, **_):
+    def __init__(self, url, method="POST", headers=None, json_body=None, body=None, **_):
         self.url = url
         self.method = method
         self.headers = headers or {}
         self.json_body = json_body
+        self.body = body  # platform sends this; the tool adapter serializes here
 
 
 class PostProcessResult:
@@ -81,7 +83,8 @@ def test_tools_call_wraps_prompt_and_merges_static_args():
     assert out.method == "POST"
     assert out.headers["Content-Type"] == "application/json"
     assert "text/event-stream" in out.headers["Accept"]
-    body = out.json_body
+    body = json.loads(out.body)
+    assert out.json_body is None
     assert body["method"] == "tools/call"
     assert body["params"]["name"] == "get_weather"
     assert body["params"]["arguments"] == {"days": 2, "location": "Houston"}
@@ -121,8 +124,9 @@ def test_handshake_exception_still_returns_tools_call():
         http=BoomHttp(),
     )
     out = adapter.pre_process(ctx, _prompt("Austin"))
-    assert out.json_body["method"] == "tools/call"
-    assert out.json_body["params"]["arguments"]["location"] == "Austin"
+    sent = json.loads(out.body)
+    assert sent["method"] == "tools/call"
+    assert sent["params"]["arguments"]["location"] == "Austin"
 
 
 def test_extract_jsonrpc_direct_json():
@@ -232,7 +236,7 @@ def test_session_id_preserved_when_notification_fails():
     out = adapter.pre_process(ctx, _prompt("x"))
     # session captured at initialize must survive a failed initialized notification
     assert out.headers.get("Mcp-Session-Id") == "sess-xyz"
-    assert out.json_body["method"] == "tools/call"
+    assert json.loads(out.body)["method"] == "tools/call"
 
 
 def test_post_process_empty_content_falls_back_to_dumps():
