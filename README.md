@@ -6,7 +6,9 @@ of a [Palo Alto AI Red Teaming](https://www.paloaltonetworks.com/) custom target
 The chat app is real (browser UI, three auth modes, vLLM streaming, full conversation logging),
 but the point of the project is [`redteam/clippy_redteam_adapter.py`](redteam/clippy_redteam_adapter.py):
 a heavily-annotated adapter that drives the app's authenticated, SSE chat endpoint as a
-red-team target.
+red-team target. Sibling adapters: [`clippy_redteam_debug_oauth2.py`](redteam/clippy_redteam_debug_oauth2.py)
+(OAuth2-traced chat) and [`clippy_redteam_mcp.py`](redteam/clippy_redteam_mcp.py) (direct
+`clippy-mcp` `tools/call` probes — vars: `endpoint`, `tool_name`, `arg_name`, optional `static_args`).
 
 ## 📚 Documentation
 
