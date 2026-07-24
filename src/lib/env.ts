@@ -6,6 +6,7 @@ const schema = z.object({
   VLLM_BASE_URL: z.url().default('http://vllm.vllm.svc.cluster.local:8000'),
   VLLM_MODEL: z.string().default('solidrust/Mistral-7B-Instruct-v0.3-AWQ'),
   VLLM_API_KEY: z.string().optional(), // required when vLLM runs with --api-key (cluster)
+  MCP_SERVER_URL: z.url().optional(), // unset ⇒ MCP tools disabled
   KC_ISSUER: z.url(),
   KC_CLIENT_ID: z.string().min(1),
   KC_CLIENT_SECRET: z.string().min(1),
