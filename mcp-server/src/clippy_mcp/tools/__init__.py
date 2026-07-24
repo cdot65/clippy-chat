@@ -8,8 +8,9 @@ def register_all(mcp: FastMCP) -> None:
     if _registered:  # create_app() may run twice (module import + tests)
         return
     _registered = True
-    from clippy_mcp.tools import mlb, news, polymarket, scm, weather
+    from clippy_mcp.tools import datetime_tool, mlb, news, polymarket, scm, weather
 
+    datetime_tool.register(mcp)
     weather.register(mcp)
     news.register(mcp)
     mlb.register(mcp)
