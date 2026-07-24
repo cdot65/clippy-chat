@@ -44,7 +44,7 @@ export const adminApi = {
 /** POST /api/chat and invoke callbacks per SSE event. Returns when stream ends. */
 export async function streamChat(
   conversationId: string, message: string,
-  on: { delta: (text: string) => void; done: () => void; error: (msg: string) => void },
+  on: { delta: (text: string) => void; done: () => void; error: (msg: string) => void; toolUse?: (name: string) => void },
 ) {
   const res = await fetch('/api/chat', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -66,6 +66,7 @@ export async function streamChat(
       if (!event || !data) continue
       const parsed = JSON.parse(data)
       if (event === 'delta') on.delta(parsed.content)
+      else if (event === 'tool_use') on.toolUse?.(parsed.name)
       else if (event === 'done') on.done()
       else if (event === 'error') on.error(parsed.message)
     }
