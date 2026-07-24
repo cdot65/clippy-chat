@@ -6,3 +6,12 @@ services:
       POSTGRES_PASSWORD: clippy
       POSTGRES_DB: clippy
     ports: ["5433:5432"]
+  mcp:
+    build: ./mcp-server
+    ports:
+      - "8080:8080"
+    environment:
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      SCM_CLIENT_ID: ${SCM_CLIENT_ID:-}
+      SCM_CLIENT_SECRET: ${SCM_CLIENT_SECRET:-}
+      SCM_TSG_ID: ${SCM_TSG_ID:-}
