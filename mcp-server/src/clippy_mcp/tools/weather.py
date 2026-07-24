@@ -26,18 +26,23 @@ async def get_weather(location: str, days: int = 1) -> dict:
     """
     days = max(1, min(7, days))
     async with httpx.AsyncClient(timeout=10) as http:
-        geo = (await http.get("https://geocoding-api.open-meteo.com/v1/search",
-                              params={"name": location, "count": 1})).json()
-        hits = geo.get("results") or []
+        geo_res = await http.get("https://geocoding-api.open-meteo.com/v1/search",
+                                 params={"name": location, "count": 1})
+        if geo_res.status_code != 200:
+            return {"error": f"weather API error {geo_res.status_code}"}
+        hits = geo_res.json().get("results") or []
         if not hits:
             return {"error": f"unknown location: {location!r}"}
         g = hits[0]
-        fc = (await http.get("https://api.open-meteo.com/v1/forecast", params={
+        fc_res = await http.get("https://api.open-meteo.com/v1/forecast", params={
             "latitude": g["latitude"], "longitude": g["longitude"],
             "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
             "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code",
             "forecast_days": days, "timezone": "auto",
-        })).json()
+        })
+        if fc_res.status_code != 200:
+            return {"error": f"weather API error {fc_res.status_code}"}
+        fc = fc_res.json()
     cur, d = fc.get("current", {}), fc.get("daily", {})
     place = ", ".join(x for x in (g.get("name"), g.get("admin1"), g.get("country")) if x)
     return {

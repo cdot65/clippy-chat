@@ -1,5 +1,6 @@
 import respx
 from httpx import Response
+
 from clippy_mcp.tools.weather import get_weather
 
 GEO = "https://geocoding-api.open-meteo.com/v1/search"
@@ -26,3 +27,19 @@ async def test_get_weather_unknown_location():
     respx.get(GEO).mock(return_value=Response(200, json={}))
     out = await get_weather("Xyzzyville")
     assert "error" in out
+
+
+@respx.mock
+async def test_get_weather_geocode_http_error():
+    respx.get(GEO).mock(return_value=Response(503))
+    out = await get_weather("Houston")
+    assert out == {"error": "weather API error 503"}
+
+
+@respx.mock
+async def test_get_weather_forecast_http_error():
+    respx.get(GEO).mock(return_value=Response(200, json={
+        "results": [{"name": "Houston", "latitude": 29.76, "longitude": -95.36}]}))
+    respx.get(FC).mock(return_value=Response(500))
+    out = await get_weather("Houston")
+    assert out == {"error": "weather API error 500"}

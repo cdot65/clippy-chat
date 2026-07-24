@@ -8,6 +8,11 @@ export type OpenAiTool = {
 }
 
 const TOOLS_TTL_MS = 5 * 60_000
+// a hung (vs. down) MCP server must never hang the chat turn: bound every
+// SDK request — connect handshake and listTools short, tool execution longer
+// (scm/external APIs can be slow; their own httpx timeout is 10s)
+const CONNECT_TIMEOUT_MS = 10_000
+const TOOL_CALL_TIMEOUT_MS = 30_000
 let client: Client | null = null
 let toolsCache: { tools: OpenAiTool[]; at: number } | null = null
 
@@ -18,7 +23,7 @@ async function getClient(): Promise<Client | null> {
   if (!url) return null
   if (client) return client
   const c = new Client({ name: 'clippy-chat', version: '0.2.0' })
-  await c.connect(new StreamableHTTPClientTransport(new URL(url)))
+  await c.connect(new StreamableHTTPClientTransport(new URL(url)), { timeout: CONNECT_TIMEOUT_MS })
   client = c
   return client
 }
@@ -29,7 +34,7 @@ export async function getMcpTools(): Promise<OpenAiTool[]> {
   try {
     const c = await getClient()
     if (!c) return []
-    const { tools } = await c.listTools()
+    const { tools } = await c.listTools(undefined, { timeout: CONNECT_TIMEOUT_MS })
     const mapped = tools.map((t) => ({
       type: 'function' as const,
       function: { name: t.name, description: t.description,
@@ -49,7 +54,7 @@ export async function callMcpTool(name: string, args: Record<string, unknown>): 
   try {
     const c = await getClient()
     if (!c) return `[tool call failed: MCP not configured]`
-    const res = await c.callTool({ name, arguments: args })
+    const res = await c.callTool({ name, arguments: args }, undefined, { timeout: TOOL_CALL_TIMEOUT_MS })
     const text = (res.content as Array<{ type: string; text?: string }> | undefined)
       ?.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n') ?? ''
     return res.isError ? `[tool error] ${text}` : text

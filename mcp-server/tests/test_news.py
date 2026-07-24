@@ -1,5 +1,6 @@
 import respx
 from httpx import Response
+
 from clippy_mcp.tools.news import get_daily_news
 
 URL = "https://api.search.brave.com/res/v1/news/search"
