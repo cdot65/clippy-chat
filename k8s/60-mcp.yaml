@@ -1,0 +1,65 @@
+# clippy-mcp — MCP tool server (streamable HTTP, NO AUTH).
+# Cluster-internal ONLY: ClusterIP, no IngressRoute — do not expose.
+# Image: ghcr.io/cdot65/clippy-mcp (built from mcp-server/ in this repo).
+# Credentials: OnePasswordItem `clippy-mcp-secrets` (see 15-secrets.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clippy-mcp
+  namespace: clippy
+  labels:
+    app: clippy-mcp
+    app.kubernetes.io/part-of: clippy-chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clippy-mcp
+  template:
+    metadata:
+      labels:
+        app: clippy-mcp
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: clippy-mcp
+          image: ghcr.io/cdot65/clippy-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - secretRef:
+                name: clippy-mcp-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clippy-mcp
+  namespace: clippy
+  labels:
+    app: clippy-mcp
+    app.kubernetes.io/part-of: clippy-chat
+spec:
+  type: ClusterIP
+  selector:
+    app: clippy-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
