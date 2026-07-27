@@ -1,0 +1,39 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: clippy-http
+  namespace: clippy
+  labels:
+    app.kubernetes.io/part-of: clippy-chat
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`clippy.cdot.io`)
+      kind: Rule
+      middlewares:
+        - name: redirect-https
+      services:
+        - name: clippy-chat
+          port: 3000
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: clippy-https
+  namespace: clippy
+  labels:
+    app.kubernetes.io/part-of: clippy-chat
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`clippy.cdot.io`)
+      kind: Rule
+      middlewares:
+        - name: clippy-ratelimit
+      services:
+        - name: clippy-chat
+          port: 3000
+  tls:
+    secretName: clippy-tls

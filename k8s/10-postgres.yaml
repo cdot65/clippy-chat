@@ -1,0 +1,91 @@
+# Dedicated PostgreSQL for clippy-chat (sessions, users, messages).
+# Credentials: OnePasswordItem `clippy-postgres` (see 15-secrets.yaml).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clippy-postgres
+  namespace: clippy
+  labels:
+    app: clippy-postgres
+    component: clippy-database
+    app.kubernetes.io/part-of: clippy-chat
+spec:
+  serviceName: clippy-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clippy-postgres
+      component: clippy-database
+  template:
+    metadata:
+      labels:
+        app: clippy-postgres
+        component: clippy-database
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - secretRef:
+                name: clippy-postgres
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: clippy-postgres-data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - clippy
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - clippy
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: clippy-postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clippy-postgres
+  namespace: clippy
+  labels:
+    app: clippy-postgres
+    component: clippy-database
+    app.kubernetes.io/part-of: clippy-chat
+spec:
+  type: ClusterIP
+  selector:
+    app: clippy-postgres
+    component: clippy-database
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres

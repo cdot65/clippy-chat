@@ -32,5 +32,11 @@ npm run dev                  # http://localhost:3000
 Stack: TanStack Start (React 19, Node 22) · Drizzle ORM + Postgres 17 · Keycloak OIDC + local
 admin + machine bearer JWTs · vLLM SSE streaming. See the docs for everything.
 
+## Production (Talos)
+
+Kubernetes manifests: [`k8s/`](k8s/). Reconciled by Argo CD Application `clippy-chat` in
+[`cdot65/talos-cluster`](https://github.com/cdot65/talos-cluster). See [`k8s/README.md`](k8s/README.md)
+for secrets (1Password) and image names.
+
 > Every hostname, realm, and credential in this repo is a placeholder
 > (`chat.example.com`, `auth.example.com`, realm `myrealm`, `changeme`). Supply your own.
