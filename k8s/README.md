@@ -8,7 +8,7 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 |------|----------|
 | `00-namespace.yaml` | `clippy` namespace |
 | `10-postgres.yaml` | Postgres StatefulSet + Service |
-| `11-postgres-longhorn-pvc.yaml` | Empty 10Gi Longhorn migration target |
+| `11-postgres-longhorn-pvc.yaml` | 10Gi Longhorn PostgreSQL claim |
 | `15-secrets.yaml` | OnePasswordItem → `clippy-postgres`, `clippy-app`, `clippy-mcp-secrets` |
 | `20-app.yaml` | App Deployment + Service |
 | `30-middleware.yaml` | Traefik rate-limit + HTTPS redirect |
@@ -49,8 +49,9 @@ split into separately reviewed changes:
 2. Switch the immutable StatefulSet storage shape only after Argo is paused, the application
    writers are stopped, and a PostgreSQL-native backup has been restored and validated.
 
-See [`postgres-storage-migration.md`](postgres-storage-migration.md). Stage 1 is additive only;
-do not copy data, delete the StatefulSet, or switch a consumer from this change.
+See [`postgres-storage-migration.md`](postgres-storage-migration.md). The desired Stage 2 manifest
+uses the explicit Longhorn claim and exact bare-metal affinity. It cannot update the live
+StatefulSet in place: do not merge or apply it outside the authorized runbook window.
 
 Add `clippy` to the Connect operator `watchNamespace` list in
 `talos-cluster/onepassword/values.yaml` (merge into live helm values before

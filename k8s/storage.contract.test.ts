@@ -32,7 +32,6 @@ describe('PostgreSQL storage contract', () => {
     expect(target.spec.accessModes).toEqual(['ReadWriteOnce'])
     expect(target.spec.storageClassName).toBe('longhorn-replicated')
     expect(target.spec.resources.requests.storage).toBe('10Gi')
-
   })
 
   it('mounts the explicit target without a volume claim template', () => {
