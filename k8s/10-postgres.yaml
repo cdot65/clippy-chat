@@ -22,6 +22,19 @@ spec:
         app: clippy-postgres
         component: clippy-database
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - talos1
+                      - talos2
+                      - talos3
+                      - talos4
+                      - talos7
       containers:
         - name: postgres
           image: postgres:17
@@ -61,15 +74,10 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
-  volumeClaimTemplates:
-    - metadata:
-        name: clippy-postgres-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: local-path
-        resources:
-          requests:
-            storage: 10Gi
+      volumes:
+        - name: clippy-postgres-data
+          persistentVolumeClaim:
+            claimName: clippy-postgres-data-longhorn
 ---
 apiVersion: v1
 kind: Service
