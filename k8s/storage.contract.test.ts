@@ -21,7 +21,7 @@ function resource(file: string, kind: string, name: string): Manifest {
 }
 
 describe('PostgreSQL storage contract', () => {
-  it('stages an unconsumed 10Gi Longhorn target claim', () => {
+  it('provides the 10Gi Longhorn target claim', () => {
     const target = resource(
       './11-postgres-longhorn-pvc.yaml',
       'PersistentVolumeClaim',
@@ -32,16 +32,41 @@ describe('PostgreSQL storage contract', () => {
     expect(target.spec.accessModes).toEqual(['ReadWriteOnce'])
     expect(target.spec.storageClassName).toBe('longhorn-replicated')
     expect(target.spec.resources.requests.storage).toBe('10Gi')
+  })
 
+  it('mounts the explicit target without a volume claim template', () => {
     const postgres = resource('./10-postgres.yaml', 'StatefulSet', 'clippy-postgres')
-    const source = postgres.spec.volumeClaimTemplates?.find(
-      (claim: Manifest) => claim.metadata?.name === 'clippy-postgres-data',
-    )
-    expect(source?.spec.storageClassName).toBe('local-path')
-    expect(source?.spec.resources.requests.storage).toBe('10Gi')
 
-    const explicitClaims = (postgres.spec.template.spec.volumes ?? [])
-      .map((volume: Manifest) => volume.persistentVolumeClaim?.claimName)
-    expect(explicitClaims).not.toContain('clippy-postgres-data-longhorn')
+    expect(postgres.spec).not.toHaveProperty('volumeClaimTemplates')
+
+    const dataVolume = postgres.spec.template.spec.volumes?.find(
+      (volume: Manifest) => volume.name === 'clippy-postgres-data',
+    )
+    expect(dataVolume?.persistentVolumeClaim?.claimName)
+      .toBe('clippy-postgres-data-longhorn')
+
+    const postgresContainer = postgres.spec.template.spec.containers.find(
+      (container: Manifest) => container.name === 'postgres',
+    )
+    const dataMount = postgresContainer.volumeMounts?.find(
+      (mount: Manifest) => mount.name === 'clippy-postgres-data',
+    )
+    expect(dataMount).toMatchObject({
+      mountPath: '/var/lib/postgresql/data',
+      subPath: 'pgdata',
+    })
+  })
+
+  it('requires the exact bare-metal hostname set', () => {
+    const postgres = resource('./10-postgres.yaml', 'StatefulSet', 'clippy-postgres')
+    const terms = postgres.spec.template.spec.affinity?.nodeAffinity
+      ?.requiredDuringSchedulingIgnoredDuringExecution?.nodeSelectorTerms
+    expect(terms).toHaveLength(1)
+    expect(terms[0].matchExpressions).toHaveLength(1)
+    expect(terms[0].matchExpressions[0]).toEqual({
+      key: 'kubernetes.io/hostname',
+      operator: 'In',
+      values: ['talos1', 'talos2', 'talos3', 'talos4', 'talos7'],
+    })
   })
 })
