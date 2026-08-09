@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: clippy
+          POSTGRES_PASSWORD: clippy
+          POSTGRES_DB: clippy
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U clippy -d clippy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://clippy:clippy@localhost:5433/clippy
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+      - run: npm ci
+      - name: Sync MCP test server
+        working-directory: mcp-server
+        run: uv sync --locked --group dev
+      - name: Run application gates
+        shell: bash
+        run: |
+          uv run --project mcp-server uvicorn clippy_mcp.server:app \
+            --host 127.0.0.1 --port 8080 >"${RUNNER_TEMP}/clippy-mcp.log" 2>&1 &
+          clippy_mcp_pid=$!
+          trap 'kill "${clippy_mcp_pid}" 2>/dev/null || true' EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null; then
+              break
+            fi
+            if [[ "${attempt}" == 30 ]]; then
+              sed -n '1,200p' "${RUNNER_TEMP}/clippy-mcp.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          npm run db:migrate
+          npm test
+          npm run build
+          npm run typecheck
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: azure/setup-kubectl@v5
+        with:
+          version: v1.36.2
+      - run: npm ci
+      - name: Verify storage contract
+        run: npm test -- k8s/storage.contract.test.ts
+      - name: Client dry-run PostgreSQL manifests
+        run: >-
+          kubectl apply --dry-run=client --validate=false
+          -f k8s/10-postgres.yaml
+          -f k8s/11-postgres-longhorn-pvc.yaml
+          -o name
+
+  mcp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  documentation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - run: npm ci
+      - run: npm run build

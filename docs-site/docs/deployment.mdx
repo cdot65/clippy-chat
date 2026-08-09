@@ -69,10 +69,12 @@ env:
   - { name: DATABASE_URL,  valueFrom: { secretKeyRef: { name: clippy-postgres, key: url } } }
 ```
 
-:::warning These manifests are examples, not committed infra
-The values above are placeholders (`chat.example.com`, `auth.example.com`, `REPLACE_ME`). This
-repo does not ship environment-specific Kubernetes manifests — keep those in your own private infra
-repo and inject real secrets from a secret manager.
+:::warning Examples and production manifests differ
+The snippets above are portable examples with placeholders (`chat.example.com`,
+`auth.example.com`, `REPLACE_ME`). This repository also ships the Argo-managed production raw
+manifests under [`k8s/`](https://github.com/cdot65/clippy-chat/tree/main/k8s). They reference
+OnePasswordItem resources and never contain secret values. Review `k8s/README.md`; do not hand-apply
+production changes while Argo manages the Application.
 :::
 
 Because the app runs multiple replicas, its code already handles the concurrency that implies

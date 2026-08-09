@@ -11,7 +11,7 @@ describe('mcp integration', () => {
     const tools = await getMcpTools()
     const names = tools.map((t) => t.function.name).sort()
     expect(names).toEqual(['get_current_datetime', 'get_daily_news', 'get_mlb_scores',
-      'get_weather', 'polymarket_bets', 'scm_config'])
+      'get_weather', 'polymarket_bets', 'scm_config', 'web_search'])
     for (const t of tools) expect(t.function.parameters).toHaveProperty('type', 'object')
   })
 
