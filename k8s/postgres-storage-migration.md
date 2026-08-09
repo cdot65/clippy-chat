@@ -35,10 +35,11 @@ Restore Argo in reverse order, child then parent, to the exact captured policies
 
 ```bash
 npm test -- k8s/storage.contract.test.ts
-kubectl apply --dry-run=client --validate=false \
-  -f k8s/10-postgres.yaml \
-  -f k8s/11-postgres-longhorn-pvc.yaml \
-  -o name
+docker run --rm -v "${PWD}:/work:ro" \
+  ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e \
+  -strict -summary \
+  /work/k8s/10-postgres.yaml \
+  /work/k8s/11-postgres-longhorn-pvc.yaml
 ```
 
 These commands render locally. Do not hand-apply the target from a review checkout.

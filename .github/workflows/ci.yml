@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: astral-sh/setup-uv@v9
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
       - run: npm ci
@@ -76,18 +76,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: azure/setup-kubectl@v5
-        with:
-          version: v1.36.2
       - run: npm ci
       - name: Verify storage contract
         run: npm test -- k8s/storage.contract.test.ts
-      - name: Client dry-run PostgreSQL manifests
+      - name: Validate PostgreSQL manifest schemas
         run: >-
-          kubectl apply --dry-run=client --validate=false
-          -f k8s/10-postgres.yaml
-          -f k8s/11-postgres-longhorn-pvc.yaml
-          -o name
+          docker run --rm -v "${PWD}:/work:ro"
+          ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e
+          -strict -summary
+          /work/k8s/10-postgres.yaml
+          /work/k8s/11-postgres-longhorn-pvc.yaml
 
   mcp:
     runs-on: ubuntu-latest
@@ -96,7 +94,7 @@ jobs:
         working-directory: mcp-server
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
