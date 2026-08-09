@@ -8,6 +8,7 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 |------|----------|
 | `00-namespace.yaml` | `clippy` namespace |
 | `10-postgres.yaml` | Postgres StatefulSet + Service |
+| `11-postgres-longhorn-pvc.yaml` | Empty 10Gi Longhorn migration target |
 | `15-secrets.yaml` | OnePasswordItem → `clippy-postgres`, `clippy-app`, `clippy-mcp-secrets` |
 | `20-app.yaml` | App Deployment + Service |
 | `30-middleware.yaml` | Traefik rate-limit + HTTPS redirect |
@@ -36,6 +37,20 @@ Still out-of-band (not in this directory):
 
 - `ghcr-secret` — `kubernetes.io/dockerconfigjson` for `ghcr.io/cdot65`
 - `clippy-tls` — owned by cert-manager
+
+## PostgreSQL storage migration
+
+Issue [`#11`](https://github.com/cdot65/clippy-chat/issues/11) tracks moving PostgreSQL from
+the talos1-local `clippy-postgres-data-clippy-postgres-0` claim to Longhorn. The migration is
+split into separately reviewed changes:
+
+1. Stage the empty `clippy-postgres-data-longhorn` target. It is intentionally unconsumed;
+   PostgreSQL remains on the `local-path` volume claim template.
+2. Switch the immutable StatefulSet storage shape only after Argo is paused, the application
+   writers are stopped, and a PostgreSQL-native backup has been restored and validated.
+
+See [`postgres-storage-migration.md`](postgres-storage-migration.md). Stage 1 is additive only;
+do not copy data, delete the StatefulSet, or switch a consumer from this change.
 
 Add `clippy` to the Connect operator `watchNamespace` list in
 `talos-cluster/onepassword/values.yaml` (merge into live helm values before
