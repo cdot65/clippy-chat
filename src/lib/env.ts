@@ -3,8 +3,8 @@ import { z } from 'zod'
 const schema = z.object({
   DATABASE_URL: z.string().min(1),
   APP_URL: z.url(),
-  VLLM_BASE_URL: z.url().default('http://vllm.vllm.svc.cluster.local:8000'),
-  VLLM_MODEL: z.string().default('solidrust/Mistral-7B-Instruct-v0.3-AWQ'),
+  VLLM_BASE_URL: z.url().default('http://vllm-qwen36.vllm.svc.cluster.local:8000'),
+  VLLM_MODEL: z.string().default('qwen36-hauhaucs'),
   VLLM_API_KEY: z.string().optional(), // required when vLLM runs with --api-key (cluster)
   MCP_SERVER_URL: z.url().optional(), // unset ⇒ MCP tools disabled
   KC_ISSUER: z.url(),

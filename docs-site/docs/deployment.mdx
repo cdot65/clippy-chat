@@ -65,7 +65,8 @@ env:
   - { name: APP_URL,       value: "https://chat.example.com" }
   - { name: KC_ISSUER,     value: "https://auth.example.com/realms/myrealm" }
   - { name: KC_CLIENT_ID,  value: "clippy-web" }
-  - { name: VLLM_BASE_URL, value: "http://vllm.vllm.svc.cluster.local:8000" }
+  - { name: VLLM_BASE_URL, value: "http://vllm-qwen36.vllm.svc.cluster.local:8000" }
+  - { name: VLLM_MODEL,    value: "qwen36-hauhaucs" }
   - { name: DATABASE_URL,  valueFrom: { secretKeyRef: { name: clippy-postgres, key: url } } }
 ```
 
