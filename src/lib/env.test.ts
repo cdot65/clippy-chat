@@ -9,10 +9,16 @@ const base = {
 }
 
 describe('parseEnv', () => {
-  it('applies defaults', () => {
+  it('defaults to the live in-cluster vLLM service', () => {
     const env = parseEnv(base)
-    expect(env.VLLM_BASE_URL).toBe('http://vllm.vllm.svc.cluster.local:8000')
-    expect(env.VLLM_MODEL).toBe('solidrust/Mistral-7B-Instruct-v0.3-AWQ')
+    expect(env.VLLM_BASE_URL).toBe('http://vllm-qwen36.vllm.svc.cluster.local:8000')
+  })
+  it('defaults to the model ID served by vLLM', () => {
+    const env = parseEnv(base)
+    expect(env.VLLM_MODEL).toBe('qwen36-hauhaucs')
+  })
+  it('applies the machine-token scope default', () => {
+    const env = parseEnv(base)
     expect(env.M2M_SCOPE).toBe('clippy-api')
   })
   it('throws on missing required', () => {
