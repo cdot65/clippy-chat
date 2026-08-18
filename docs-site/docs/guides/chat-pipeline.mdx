@@ -30,20 +30,21 @@ Everything a chat turn touches, from `POST /api/chat` to streamed tokens.
    SSE, accumulate the assistant text and token usage; on completion persist the assistant row and
    emit `done`.
 
-## Mistral v0.3 template quirks
+## Chat-template compatibility normalization
 
-The default model (`Mistral-7B-Instruct-v0.3`) has a strict chat template. Two transforms in
-`src/lib/chat/history.ts` keep it happy:
+The production model is `qwen36-hauhaucs`. Clippy retains two conservative transforms in
+`src/lib/chat/history.ts` from its earlier Mistral deployment so persisted conversations remain
+portable across strict chat templates:
 
-- **`foldSystem`** — Mistral rejects the `system` role, so all system messages are concatenated
+- **`foldSystem`** — strict templates may reject the `system` role, so all system messages are concatenated
   and **prepended to the first user turn's content**; standalone system entries are dropped.
 - **`trimHistory`** — keeps the system message(s) + newest turns that fit `maxTokens` (approx
   `ceil(len/4)` tokens per message), dropping the oldest prefix. Then it enforces a **user-first
   guarantee**: leading `assistant` turns are shifted off so the first non-system turn is always a
-  `user` turn (Mistral rejects a payload that starts with `assistant`).
+  `user` turn (strict alternating-role templates reject a payload that starts with `assistant`).
 
 :::tip Swapping models
-`VLLM_MODEL` sets the model. If you point Clippy at a model without Mistral's alternation rules,
+`VLLM_MODEL` sets the model. If you point Clippy at a model without strict alternation rules,
 the folding/trimming is still safe — it just becomes a no-op-ish normalization.
 :::
 

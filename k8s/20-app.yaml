@@ -47,9 +47,9 @@ spec:
             - name: KC_CLIENT_ID
               value: "clippy-web"
             - name: VLLM_BASE_URL
-              value: "http://vllm.vllm.svc.cluster.local:8000"
+              value: "http://vllm-qwen36.vllm.svc.cluster.local:8000"
             - name: VLLM_MODEL
-              value: "stelterlab/Qwen3-30B-A3B-Instruct-2507-AWQ"
+              value: "qwen36-hauhaucs"
             - name: M2M_SCOPE
               value: "clippy-api"
             - name: MCP_SERVER_URL

@@ -16,8 +16,8 @@ call — the app fails fast rather than booting half-configured.
 | --- | --- | --- | --- |
 | `DATABASE_URL` | non-empty Postgres connection string | ✅ | — |
 | `APP_URL` | URL; also decides cookie `Secure` + OIDC redirect rebuild | ✅ | — |
-| `VLLM_BASE_URL` | URL | — | `http://vllm.vllm.svc.cluster.local:8000` |
-| `VLLM_MODEL` | string | — | `solidrust/Mistral-7B-Instruct-v0.3-AWQ` |
+| `VLLM_BASE_URL` | URL | — | `http://vllm-qwen36.vllm.svc.cluster.local:8000` |
+| `VLLM_MODEL` | string | — | `qwen36-hauhaucs` |
 | `VLLM_API_KEY` | string | optional | unset — header omitted when absent; **required if vLLM runs with `--api-key`** |
 | `KC_ISSUER` | URL (OIDC realm base) | ✅ | — |
 | `KC_CLIENT_ID` | non-empty string | ✅ | — |
@@ -32,8 +32,8 @@ call — the app fails fast rather than booting half-configured.
 ```bash title=".env.example"
 DATABASE_URL=postgres://clippy:clippy@localhost:5433/clippy
 APP_URL=http://localhost:3000
-VLLM_BASE_URL=http://vllm.vllm.svc.cluster.local:8000
-VLLM_MODEL=solidrust/Mistral-7B-Instruct-v0.3-AWQ
+VLLM_BASE_URL=http://vllm-qwen36.vllm.svc.cluster.local:8000
+VLLM_MODEL=qwen36-hauhaucs
 VLLM_API_KEY= # required when cluster vLLM runs with --api-key
 KC_ISSUER=https://auth.example.com/realms/myrealm
 KC_CLIENT_ID=clippy-web
