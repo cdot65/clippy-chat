@@ -30,4 +30,14 @@ describe('parseEnv', () => {
       .toBe('http://mcp:8080/mcp')
     expect(() => parseEnv({ ...base, MCP_SERVER_URL: 'not-a-url' })).toThrow()
   })
+  it('requires MCP client credentials when MCP is enabled', () => {
+    expect(() => parseEnv({ ...base, MCP_SERVER_URL: 'http://mcp:8080/mcp' })).toThrow()
+    expect(parseEnv({
+      ...base,
+      MCP_SERVER_URL: 'http://mcp:8080/mcp',
+      MCP_TOKEN_URL: 'https://auth.example.com/realms/truffles/protocol/openid-connect/token',
+      MCP_CLIENT_ID: 'clippy-mcp-client',
+      MCP_CLIENT_SECRET: 'secret',
+    }).MCP_CLIENT_ID).toBe('clippy-mcp-client')
+  })
 })
