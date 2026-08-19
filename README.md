@@ -38,5 +38,9 @@ Kubernetes manifests: [`k8s/`](k8s/). Reconciled by Argo CD Application `clippy-
 [`cdot65/talos-cluster`](https://github.com/cdot65/talos-cluster). See [`k8s/README.md`](k8s/README.md)
 for secrets (1Password) and image names.
 
+Source of truth is `git.cdot.io/cdot.io/clippy-chat` (Forgejo); GitHub stays a live read-only
+mirror at `cdot65/clippy-chat`. Images build in Forgejo Actions and push to
+`registry.cdot.io/clippy/`.
+
 > Every hostname, realm, and credential in this repo is a placeholder
 > (`chat.example.com`, `auth.example.com`, realm `myrealm`, `changeme`). Supply your own.

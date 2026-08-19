@@ -18,12 +18,15 @@ The `Dockerfile` is a two-stage build:
 
 ```bash
 # Talos is amd64 — Dockerfiles pin linux/amd64; keep the flag explicit when building
-docker build --platform linux/amd64 -t ghcr.io/cdot65/clippy-chat:latest .
-docker push ghcr.io/cdot65/clippy-chat:latest
+docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-chat:latest .
+docker push registry.cdot.io/clippy/clippy-chat:latest
 
-docker build --platform linux/amd64 -t ghcr.io/cdot65/clippy-mcp:latest mcp-server
-docker push ghcr.io/cdot65/clippy-mcp:latest
+docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-mcp:latest mcp-server
+docker push registry.cdot.io/clippy/clippy-mcp:latest
 ```
+
+Forgejo CI (`.forgejo/workflows/ci.yml`) builds and pushes both images automatically on every push
+to `main` — the commands above are for building locally, not the normal path.
 
 :::note Migrations run separately
 `scripts/migrate.mjs` is copied into the image but is **not** part of the container `CMD`. Run

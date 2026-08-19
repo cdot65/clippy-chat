@@ -5,5 +5,5 @@ In-namespace MCP tool server (streamable HTTP) for clippy-chat. Run `uv sync`, t
 Cluster images must be **linux/amd64** (Talos). The Dockerfile pins `--platform=linux/amd64`; when building from Apple Silicon also pass the flag:
 
 ```bash
-docker build --platform linux/amd64 -t ghcr.io/cdot65/clippy-mcp:latest .
+docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-mcp:latest .
 ```

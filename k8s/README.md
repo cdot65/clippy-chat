@@ -2,7 +2,8 @@
 
 Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 `clippy-chat` in [`cdot65/talos-cluster`](https://github.com/cdot65/talos-cluster)
-(`gitops/apps/clippy-chat.yaml`).
+(`gitops/apps/clippy-chat.yaml`), sourced from `git.cdot.io/cdot.io/clippy-chat`
+(GitHub push-mirror at `cdot65/clippy-chat`).
 
 | File | Contents |
 |------|----------|
@@ -35,7 +36,8 @@ Bootstrap / refresh from the live namespace (preserves current values):
 
 Still out-of-band (not in this directory):
 
-- `ghcr-secret` — `kubernetes.io/dockerconfigjson` for `ghcr.io/cdot65`
+- `harbor-pull-secret` — `kubernetes.io/dockerconfigjson` for `registry.cdot.io` (robot
+  `robot$clippy+pull`), applied via `talos-cluster/clippy-chat/create-harbor-pull-secret.sh`
 - `clippy-tls` — owned by cert-manager
 
 ## PostgreSQL storage migration
@@ -61,8 +63,8 @@ upgrade — see that file's header).
 
 | Workload | Image |
 |----------|-------|
-| clippy-chat (+ migrate init) | `ghcr.io/cdot65/clippy-chat:latest` |
-| clippy-mcp | `ghcr.io/cdot65/clippy-mcp:latest` |
+| clippy-chat (+ migrate init) | `registry.cdot.io/clippy/clippy-chat:latest` |
+| clippy-mcp | `registry.cdot.io/clippy/clippy-mcp:latest` |
 
 ## Do not hand-apply on Talos
 
