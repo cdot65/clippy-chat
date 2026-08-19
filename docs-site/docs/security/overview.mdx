@@ -116,6 +116,14 @@ Current production evidence covers **Truffles Keycloak only**. A customer Auth0 
 own registration, token projection tests, positive request, isolated negative-claim tests, and
 post-restart proof before approval.
 
+## Known approval blocker
+
+Authentication/authorization behavior passes production tests, but secret ownership does not yet
+match the approved boundary: the current manifest projects `clippy-mcp-client` from the Truffles
+vault; design requires **AI Security Academy - Runtime** only. See
+[Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22). This blocks final
+secret-boundary approval, not independent execution of the non-mutating E2E probes.
+
 ## Review acceptance criteria
 
 - Positive token initializes Clippy, lists the exact tool set, and calls a safe tool.
@@ -126,5 +134,6 @@ post-restart proof before approval.
 - Tool parity survives AIRS and MCP workload restart.
 - Source clients remain disabled only after destination-client configuration parity and token
   expiry are proven.
+- `clippy-mcp-client` is migrated to AI Security Academy - Runtime and issue #22 is closed.
 
 See [Production evidence](./production-evidence) for the recorded results.

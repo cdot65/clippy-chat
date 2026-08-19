@@ -26,6 +26,11 @@ production responses are documented in the
 Vaults: **AI Security Academy** and scoped **Truffles** client credentials. Both
 are reachable by the Connect operator. Field labels must match Secret keys 1:1:
 
+> **Known drift:** the approved segmentation design requires `clippy-mcp-client` only in
+> **AI Security Academy - Runtime**. The table below describes the current deployed source,
+> not the approved end state. [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
+> tracks secret-safe migration. Do not rotate the current item before that runbook is approved.
+
 | 1P item | Secret | Required fields |
 |---------|--------|-----------------|
 | `Talos - Clippy Postgres` | `clippy-postgres` | `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD` |

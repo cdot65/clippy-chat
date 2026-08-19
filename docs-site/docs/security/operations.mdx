@@ -67,16 +67,26 @@ and checks `aud`, `azp`, `scope`, and `portkey_workspace`. `/healthz` is the onl
 
 ## Secret ownership
 
-- `clippy-mcp-client` is a OnePasswordItem projected from the **Truffles** vault.
+- The authoritative design requires `clippy-mcp-client` only in
+  **AI Security Academy - Runtime**, exposed to the scoped service account.
 - Clippy application/MCP downstream secrets remain in **AI Security Academy**.
 - Kubernetes Secrets are reconciled objects, not the source of truth.
 - Never copy secret values into manifests, Argo parameters, Forgejo variables, evidence, or docs.
 - Never put admin passwords, client secrets, gateway keys, or JWTs in argv.
 - Use stdin for token request bodies and curl header files (`-H @-`).
 
+:::danger Open secret-boundary gap
+The deployed `k8s/15-secrets.yaml` currently projects this credential from the **Truffles** vault.
+Production reconciliation and authorization tests pass, but placement violates the approved
+Runtime-vault boundary. [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
+tracks secret-safe migration. Do not rotate or grant final secret-boundary approval until it is
+resolved and the E2E matrix is repeated.
+:::
+
 ## Rotation procedure
 
-1. Create/rotate the destination credential in Keycloak and its scoped 1Password item.
+1. Resolve issue #22; create/rotate the destination credential only in the scoped
+   **AI Security Academy - Runtime** item.
 2. Wait for `clippy-mcp-client` Secret reconciliation.
 3. Prove the app can mint a token from the live Secret and verify selected claims.
 4. Run initialize, tools/list, and safe tools/call through AIRS.
