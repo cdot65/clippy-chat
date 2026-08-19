@@ -90,7 +90,7 @@ jobs:
       - name: Run application gates
         shell: bash
         run: |
-          uv run --project mcp-server uvicorn clippy_mcp.server:app \
+          uv run --project mcp-server uvicorn --app-dir mcp-server/tests authenticated_server:app \
             --host 127.0.0.1 --port 8080 >"${RUNNER_TEMP}/clippy-mcp.log" 2>&1 &
           clippy_mcp_pid=$!
           trap 'kill "${clippy_mcp_pid}" 2>/dev/null || true' EXIT

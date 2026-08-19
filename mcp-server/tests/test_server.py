@@ -18,7 +18,20 @@ def test_healthz():
 
 def test_mcp_mount_exists():
     with TestClient(create_app()) as client:
-        # streamable HTTP endpoint answers (406 without proper Accept headers is fine —
-        # proves the mount exists; 404 would mean it doesn't)
         res = client.post("/mcp", json={})
-        assert res.status_code != 404
+        assert res.status_code == 401
+
+
+def test_ci_server_requires_the_fixture_bearer():
+    from authenticated_server import CI_MCP_TOKEN, app
+
+    with TestClient(app) as client:
+        denied = client.post("/mcp", headers={"authorization": "Bearer wrong"}, json={})
+        allowed = client.post(
+            "/mcp",
+            headers={"authorization": f"Bearer {CI_MCP_TOKEN}"},
+            json={},
+        )
+
+    assert denied.status_code == 401
+    assert allowed.status_code != 401

@@ -22,7 +22,8 @@ model's willingness to call them.
 
 ```text
 POST http://clippy-mcp.clippy.svc.cluster.local:8080/mcp
-  streamable HTTP, stateless, NO auth (cluster-internal only)
+  streamable HTTP, stateless, Keycloak bearer required
+  Authorization: Bearer &lt;clippy-mcp-client token&gt;
   Content-Type: application/json
   Accept:       application/json, text/event-stream
 
@@ -43,8 +44,9 @@ polymarket/datetime) are safe to fuzz freely.
 
 ## Configuration
 
-All configuration is through adapter **vars** — there are no secrets (the MCP server is
-unauthenticated).
+Configure the adapter's platform OAuth2 authentication with the
+`clippy-mcp-client` client-credentials grant. The platform injects the resulting
+token through `context.auth`; the adapter forwards it as a bearer token.
 
 ```text
 endpoint    (required)  http://clippy-mcp.clippy.svc.cluster.local:8080/mcp

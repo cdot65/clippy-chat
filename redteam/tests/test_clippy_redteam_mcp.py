@@ -33,8 +33,8 @@ def _inject_platform(monkeypatch):
     monkeypatch.setattr(adapter, "PostProcessResult", PostProcessResult, raising=False)
 
 
-def _ctx(vars):
-    return SimpleNamespace(vars=vars, secrets={}, auth={})
+def _ctx(vars, token="redteam-jwt"):
+    return SimpleNamespace(vars=vars, secrets={}, auth={"token": token} if token else {})
 
 
 def _prompt(text):
@@ -49,6 +49,7 @@ def test_pre_process_builds_tools_call_with_prompt_in_arg():
     assert out.method == "POST"
     assert out.headers["Content-Type"] == "application/json"
     assert "text/event-stream" in out.headers["Accept"]
+    assert out.headers["Authorization"] == "Bearer redteam-jwt"
     body = out.json_body  # a dict, satisfies pydantic
     assert body["method"] == "tools/call"
     assert body["params"]["name"] == "get_daily_news"
@@ -59,6 +60,11 @@ def test_defaults_to_get_weather_location():
     out = adapter.pre_process(_ctx({"endpoint": "http://mcp/mcp"}), _prompt("Houston"))
     assert out.json_body["params"]["name"] == "get_weather"
     assert out.json_body["params"]["arguments"] == {"location": "Houston"}
+
+
+def test_pre_process_requires_platform_oauth_token():
+    with pytest.raises(KeyError):
+        adapter.pre_process(_ctx({"endpoint": "http://mcp/mcp"}, token=""), _prompt("Houston"))
 
 
 def test_static_args_merge_with_prompt_arg():

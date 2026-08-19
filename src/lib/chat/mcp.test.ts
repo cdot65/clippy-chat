@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const listTools = vi.fn()
 const callTool = vi.fn()
 const connect = vi.fn()
+const { transport } = vi.hoisted(() => ({ transport: vi.fn() }))
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class {
@@ -13,9 +14,12 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   },
 }))
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
-  StreamableHTTPClientTransport: vi.fn(),
+  StreamableHTTPClientTransport: transport,
 }))
 vi.mock('~/lib/env', () => ({ env: () => ({ MCP_SERVER_URL: 'http://mcp:8080/mcp' }) }))
+vi.mock('./mcp-auth', () => ({
+  getMcpCredential: vi.fn().mockResolvedValue({ accessToken: 'mcp-jwt', expiresAt: Date.now() + 300_000 }),
+}))
 
 import { callMcpTool, getMcpTools, _resetMcpForTests } from './mcp'
 
@@ -45,6 +49,14 @@ describe('getMcpTools', () => {
     await getMcpTools()
     expect(connect.mock.calls[0][1]).toEqual({ timeout: 10_000 })
     expect(listTools.mock.calls[0][1]).toEqual({ timeout: 10_000 })
+  })
+  it('authenticates every MCP transport with the M2M bearer', async () => {
+    listTools.mockResolvedValue({ tools: [] })
+    await getMcpTools()
+
+    expect(transport).toHaveBeenCalledWith(new URL('http://mcp:8080/mcp'), {
+      requestInit: { headers: { Authorization: 'Bearer mcp-jwt' } },
+    })
   })
 })
 

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -215,6 +215,7 @@ dependencies = [
     { name = "mcp" },
     { name = "pan-scm-sdk" },
     { name = "pydantic" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "uvicorn" },
 ]
 
@@ -232,6 +233,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.12" },
     { name = "pan-scm-sdk", specifier = ">=0.3" },
     { name = "pydantic", specifier = ">=2.9" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
     { name = "uvicorn", specifier = ">=0.34" },
 ]
 
