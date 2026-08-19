@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// int test: requires `docker compose up -d mcp` (fails without it, like the other *.int.test.ts suites)
+// Start fixture: `uv run --project mcp-server uvicorn --app-dir mcp-server/tests authenticated_server:app --port 8080`
 vi.mock('~/lib/env', () => ({ env: () => ({ MCP_SERVER_URL: 'http://localhost:8080/mcp' }) }))
 vi.mock('./mcp-auth', () => ({
   getMcpCredential: () => Promise.resolve({
