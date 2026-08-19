@@ -10,7 +10,7 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 | `00-namespace.yaml` | `clippy` namespace |
 | `10-postgres.yaml` | Postgres StatefulSet + Service |
 | `11-postgres-longhorn-pvc.yaml` | 10Gi Longhorn PostgreSQL claim |
-| `15-secrets.yaml` | OnePasswordItem → `clippy-postgres`, `clippy-app`, `clippy-mcp-secrets` |
+| `15-secrets.yaml` | OnePasswordItem → application, MCP, and MCP OAuth client Secrets |
 | `20-app.yaml` | App Deployment + Service |
 | `30-middleware.yaml` | Traefik rate-limit + HTTPS redirect |
 | `40-certificate.yaml` | cert-manager Certificate (`clippy.cdot.io`) |
@@ -19,14 +19,15 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 
 ## Secrets
 
-Vault: **AI Security Academy** (Connect operator reachability). Field labels must
-match Secret keys 1:1:
+Vaults: **AI Security Academy** and scoped **Truffles** client credentials. Both
+are reachable by the Connect operator. Field labels must match Secret keys 1:1:
 
 | 1P item | Secret | Required fields |
 |---------|--------|-----------------|
 | `Talos - Clippy Postgres` | `clippy-postgres` | `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD` |
 | `Talos - Clippy App` | `clippy-app` | `DATABASE_URL`, `KC_CLIENT_SECRET`, `SESSION_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `VLLM_API_KEY` |
 | `Talos - Clippy MCP` | `clippy-mcp-secrets` | `BRAVE_API_KEY`, `SCM_CLIENT_ID`, `SCM_CLIENT_SECRET`, `SCM_TSG_ID` |
+| `Truffles - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
 
 Bootstrap / refresh from the live namespace (preserves current values):
 
@@ -63,8 +64,8 @@ upgrade — see that file's header).
 
 | Workload | Image |
 |----------|-------|
-| clippy-chat (+ migrate init) | `registry.cdot.io/clippy/clippy-chat:latest` |
-| clippy-mcp | `registry.cdot.io/clippy/clippy-mcp:latest` |
+| clippy-chat (+ migrate init) | `registry.cdot.io/clippy/clippy-chat:sha-fe3b2a2…@sha256:3b9104b…` |
+| clippy-mcp | `registry.cdot.io/clippy/clippy-mcp:sha-fe3b2a2…@sha256:4b57c11…` |
 
 ## Do not hand-apply on Talos
 

@@ -23,7 +23,7 @@ spec:
         - name: harbor-pull-secret
       initContainers:
         - name: migrate
-          image: registry.cdot.io/clippy/clippy-chat:latest
+          image: registry.cdot.io/clippy/clippy-chat:sha-fe3b2a2ba0135ddb4880c3021c957420aa19664a@sha256:3b9104b409652463bc302409837cf9be4f61a74a0c7eb5e75c9f4544f31f0288
           imagePullPolicy: Always
           command: ["node", "scripts/migrate.mjs"]
           envFrom:
@@ -31,7 +31,7 @@ spec:
                 name: clippy-app
       containers:
         - name: app
-          image: registry.cdot.io/clippy/clippy-chat:latest
+          image: registry.cdot.io/clippy/clippy-chat:sha-fe3b2a2ba0135ddb4880c3021c957420aa19664a@sha256:3b9104b409652463bc302409837cf9be4f61a74a0c7eb5e75c9f4544f31f0288
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -54,6 +54,21 @@ spec:
               value: "clippy-api"
             - name: MCP_SERVER_URL
               value: "http://clippy-mcp.clippy.svc.cluster.local:8080/mcp"
+            - name: MCP_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-mcp-client
+                  key: MCP_TOKEN_URL
+            - name: MCP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-mcp-client
+                  key: MCP_CLIENT_ID
+            - name: MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-mcp-client
+                  key: MCP_CLIENT_SECRET
           resources:
             requests:
               cpu: 50m
