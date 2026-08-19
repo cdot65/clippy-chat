@@ -21,15 +21,7 @@ jobs:
   application:
     runs-on: node
     env:
-      # 172.17.0.1 is the dind sidecar's bridge gateway, not "localhost" —
-      # the "services:" convenience feature publishes container ports on the
-      # REMOTE dind daemon (DOCKER_HOST is a remote tcp:// endpoint on this
-      # runner pool), not on this job container's own network namespace, so
-      # a GitHub-Actions-style "services:" block's implicit localhost:PORT
-      # never resolves here. Postgres is started explicitly below instead,
-      # on the same dind daemon docker/build-push-action already reaches via
-      # this same gateway (see forgejo/runner-deployment.yaml).
-      DATABASE_URL: postgres://clippy:clippy@172.17.0.1:5433/clippy
+      DATABASE_URL: postgres://clippy:clippy@localhost:5433/clippy
     steps:
       # TEMPORARY DIAGNOSTIC — Forgejo's job logs aren't reachable via any
       # documented API from this environment, so this job's own commands
@@ -77,6 +69,37 @@ jobs:
             fi
             sleep 1
           done
+      - name: Relay localhost:5433 to the dind-published Postgres port
+        shell: bash
+        # DOCKER_HOST is the remote dind sidecar, so "-p 5433:5432" above
+        # publishes the port on DIND'S network (reachable from this job
+        # container at its bridge gateway, 172.17.0.1 — same address
+        # docker/build-push-action already uses), not on this job
+        # container's own loopback. The app's test suite hardcodes
+        # postgres://.../@localhost:5433/... in several *.int.test.ts
+        # files (correct for local dev and for GitHub-hosted runners,
+        # where docker run and the job share one network namespace) —
+        # out of scope to change here, so make localhost:5433 real
+        # instead via a tiny local TCP relay to the actual address.
+        run: |
+          nohup node -e '
+            const net = require("net");
+            net.createServer((client) => {
+              const upstream = net.connect(5433, "172.17.0.1");
+              client.pipe(upstream);
+              upstream.pipe(client);
+              client.on("error", () => {});
+              upstream.on("error", () => {});
+            }).listen(5433, "127.0.0.1", () => console.log("relay up"));
+          ' > /tmp/pg-relay.log 2>&1 &
+          disown
+          sleep 1
+          cat /tmp/pg-relay.log
+          node -e '
+            const net = require("net");
+            const s = net.connect(5433, "127.0.0.1", () => { console.log("RELAY_OK"); s.end(); process.exit(0); });
+            s.on("error", (e) => { console.error("RELAY_FAILED", e.message); process.exit(1); });
+          '
       - name: npm ci
         shell: bash
         run: |
