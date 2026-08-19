@@ -16,7 +16,6 @@ from clippy_mcp.auth import (
     InvalidForwardedToken,
 )
 
-
 ISSUER = "https://auth.dev.cdot.io/realms/truffles"
 WORKSPACE = "ws-produc-985697"
 

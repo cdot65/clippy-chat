@@ -14,7 +14,7 @@
 #
 # Platform-injected symbols (do not import): PreProcessResult, PostProcessResult.
 #
-# Config (adapter vars, no secrets):
+# Config (adapter vars + platform OAuth2 auth):
 #   endpoint    (required) http://clippy-mcp.clippy.svc.cluster.local:8080/mcp
 #   tool_name   (default get_weather) MCP tool to invoke
 #   arg_name    (default location) argument the prompt fills
@@ -60,7 +60,8 @@ def pre_process(context, inference_input):
     args[arg] = prompt
     params = {"name": tool, "arguments": args}
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
-    h = {"Accept": _A, "Content-Type": "application/json"}
+    token = context.auth["token"]
+    h = {"Accept": _A, "Content-Type": "application/json", "Authorization": "Bearer " + token}
     return PreProcessResult(url=ep, method="POST", headers=h, json_body=body)
 
 

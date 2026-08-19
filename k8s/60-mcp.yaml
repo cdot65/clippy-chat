@@ -1,4 +1,4 @@
-# clippy-mcp — MCP tool server (streamable HTTP, NO AUTH).
+# clippy-mcp — MCP tool server (streamable HTTP, forwarded bearer auth).
 # Cluster-internal ONLY: ClusterIP, no IngressRoute — do not expose.
 # Image: registry.cdot.io/clippy/clippy-mcp (built from mcp-server/ in this repo, Forgejo CI).
 # Credentials: OnePasswordItem `clippy-mcp-secrets` (see 15-secrets.yaml).
@@ -32,6 +32,17 @@ spec:
           envFrom:
             - secretRef:
                 name: clippy-mcp-secrets
+          env:
+            - name: MCP_OIDC_ISSUER
+              value: https://auth.dev.cdot.io/realms/truffles
+            - name: MCP_OIDC_AUDIENCE
+              value: clippy
+            - name: MCP_OIDC_AUTHORIZED_PARTY
+              value: clippy-mcp-client
+            - name: MCP_OIDC_REQUIRED_SCOPE
+              value: mcp.invoke
+            - name: MCP_OIDC_WORKSPACE
+              value: ws-produc-985697
           resources:
             requests:
               cpu: 50m

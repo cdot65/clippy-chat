@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { env } from '~/lib/env'
+import { getMcpCredential } from './mcp-auth'
 
 export type OpenAiTool = {
   type: 'function'
@@ -14,17 +15,24 @@ const TOOLS_TTL_MS = 5 * 60_000
 const CONNECT_TIMEOUT_MS = 10_000
 const TOOL_CALL_TIMEOUT_MS = 30_000
 let client: Client | null = null
+let clientExpiresAt = 0
 let toolsCache: { tools: OpenAiTool[]; at: number } | null = null
 
-export function _resetMcpForTests() { client = null; toolsCache = null }
+export function _resetMcpForTests() { client = null; clientExpiresAt = 0; toolsCache = null }
 
 async function getClient(): Promise<Client | null> {
   const url = env().MCP_SERVER_URL
   if (!url) return null
-  if (client) return client
+  if (client && clientExpiresAt - 30_000 > Date.now()) return client
+  if (client) await client.close().catch(() => undefined)
+  const credential = await getMcpCredential()
   const c = new Client({ name: 'clippy-chat', version: '0.2.0' })
-  await c.connect(new StreamableHTTPClientTransport(new URL(url)), { timeout: CONNECT_TIMEOUT_MS })
+  const transport = new StreamableHTTPClientTransport(new URL(url), {
+    requestInit: { headers: { Authorization: `Bearer ${credential.accessToken}` } },
+  })
+  await c.connect(transport, { timeout: CONNECT_TIMEOUT_MS })
   client = c
+  clientExpiresAt = credential.expiresAt
   return client
 }
 

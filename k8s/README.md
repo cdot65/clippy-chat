@@ -27,8 +27,10 @@ match Secret keys 1:1:
 | `Talos - Clippy Postgres` | `clippy-postgres` | `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD` |
 | `Talos - Clippy App` | `clippy-app` | `DATABASE_URL`, `KC_CLIENT_SECRET`, `SESSION_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `VLLM_API_KEY` |
 | `Talos - Clippy MCP` | `clippy-mcp-secrets` | `BRAVE_API_KEY`, `SCM_CLIENT_ID`, `SCM_CLIENT_SECRET`, `SCM_TSG_ID` |
+| `Truffles - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
 
-Bootstrap / refresh from the live namespace (preserves current values):
+Bootstrap / refresh AI Security Academy items from the live namespace
+(preserves current values). The scoped Truffles item is managed separately.
 
 ```bash
 ./scripts/sync-clippy-secrets-to-1password.sh
