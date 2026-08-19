@@ -1,6 +1,6 @@
 # clippy-mcp — MCP tool server (streamable HTTP, NO AUTH).
 # Cluster-internal ONLY: ClusterIP, no IngressRoute — do not expose.
-# Image: ghcr.io/cdot65/clippy-mcp (built from mcp-server/ in this repo).
+# Image: registry.cdot.io/clippy/clippy-mcp (built from mcp-server/ in this repo, Forgejo CI).
 # Credentials: OnePasswordItem `clippy-mcp-secrets` (see 15-secrets.yaml).
 apiVersion: apps/v1
 kind: Deployment
@@ -21,10 +21,10 @@ spec:
         app: clippy-mcp
     spec:
       imagePullSecrets:
-        - name: ghcr-secret
+        - name: harbor-pull-secret
       containers:
         - name: clippy-mcp
-          image: ghcr.io/cdot65/clippy-mcp:latest
+          image: registry.cdot.io/clippy/clippy-mcp:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

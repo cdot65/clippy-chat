@@ -1,5 +1,5 @@
 # clippy-chat app — TanStack Start (Node) chat UI in front of cluster vLLM.
-# Image: ghcr.io/cdot65/clippy-chat (build/push from this repo).
+# Image: registry.cdot.io/clippy/clippy-chat (build/push from this repo, Forgejo CI).
 # Credentials: OnePasswordItem `clippy-app` (see 15-secrets.yaml).
 apiVersion: apps/v1
 kind: Deployment
@@ -20,10 +20,10 @@ spec:
         app: clippy-chat
     spec:
       imagePullSecrets:
-        - name: ghcr-secret
+        - name: harbor-pull-secret
       initContainers:
         - name: migrate
-          image: ghcr.io/cdot65/clippy-chat:latest
+          image: registry.cdot.io/clippy/clippy-chat:latest
           imagePullPolicy: Always
           command: ["node", "scripts/migrate.mjs"]
           envFrom:
@@ -31,7 +31,7 @@ spec:
                 name: clippy-app
       containers:
         - name: app
-          image: ghcr.io/cdot65/clippy-chat:latest
+          image: registry.cdot.io/clippy/clippy-chat:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
