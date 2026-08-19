@@ -1,0 +1,202 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # In-cluster npm proxy cache (talos-cluster verdaccio/). CI-only — local
+  # installs and any non-cluster CI are unaffected.
+  NPM_CONFIG_REGISTRY: https://npm.cdot.io/
+
+permissions:
+  contents: read
+
+jobs:
+  application:
+    runs-on: node
+    env:
+      DATABASE_URL: postgres://clippy:clippy@localhost:5433/clippy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - name: Start Postgres
+        run: |
+          # The container runs on the persistent dind daemon, not this
+          # ephemeral job container — clean up any leftover from a prior
+          # run with the same name before starting a fresh one.
+          docker rm -f clippy-ci-pg >/dev/null 2>&1 || true
+          docker run -d --name clippy-ci-pg \
+            -e POSTGRES_USER=clippy -e POSTGRES_PASSWORD=clippy -e POSTGRES_DB=clippy \
+            -p 5433:5432 \
+            postgres@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317 # 17.10
+
+          for attempt in {1..30}; do
+            if docker exec clippy-ci-pg pg_isready -U clippy -d clippy >/dev/null 2>&1; then
+              break
+            fi
+            if [[ "${attempt}" == 30 ]]; then
+              docker logs clippy-ci-pg
+              exit 1
+            fi
+            sleep 1
+          done
+      - name: Relay localhost:5433 to the dind-published Postgres port
+        shell: bash
+        # DOCKER_HOST is the remote dind sidecar, so "-p 5433:5432" above
+        # publishes the port on DIND'S network (reachable from this job
+        # container at its bridge gateway, 172.17.0.1 — same address
+        # docker/build-push-action already uses), not on this job
+        # container's own loopback. The app's test suite hardcodes
+        # postgres://.../@localhost:5433/... in several *.int.test.ts
+        # files (correct for local dev and for GitHub-hosted runners,
+        # where docker run and the job share one network namespace) —
+        # out of scope to change here, so make localhost:5433 real
+        # instead via a tiny local TCP relay to the actual address.
+        run: |
+          nohup node -e '
+            const net = require("net");
+            net.createServer((client) => {
+              const upstream = net.connect(5433, "172.17.0.1");
+              client.pipe(upstream);
+              upstream.pipe(client);
+              client.on("error", () => {});
+              upstream.on("error", () => {});
+            }).listen(5433, "127.0.0.1", () => console.log("relay up"));
+          ' > /tmp/pg-relay.log 2>&1 &
+          disown
+          sleep 1
+          cat /tmp/pg-relay.log
+          node -e '
+            const net = require("net");
+            const s = net.connect(5433, "127.0.0.1", () => { console.log("RELAY_OK"); s.end(); process.exit(0); });
+            s.on("error", (e) => { console.error("RELAY_FAILED", e.message); process.exit(1); });
+          '
+      - run: npm ci
+      - name: Sync MCP test server
+        working-directory: mcp-server
+        run: uv sync --locked --group dev
+      - name: Run application gates
+        shell: bash
+        run: |
+          uv run --project mcp-server uvicorn clippy_mcp.server:app \
+            --host 127.0.0.1 --port 8080 >"${RUNNER_TEMP}/clippy-mcp.log" 2>&1 &
+          clippy_mcp_pid=$!
+          trap 'kill "${clippy_mcp_pid}" 2>/dev/null || true' EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null; then
+              break
+            fi
+            if [[ "${attempt}" == 30 ]]; then
+              sed -n '1,200p' "${RUNNER_TEMP}/clippy-mcp.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          npm run db:migrate
+          npm test
+          npm run build
+          npm run typecheck
+      - name: Stop Postgres
+        if: always()
+        run: docker rm -f clippy-ci-pg >/dev/null 2>&1 || true
+
+  kubernetes:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify storage contract
+        run: npm test -- k8s/storage.contract.test.ts
+      - name: Validate PostgreSQL manifest schemas
+        # No bind mount: DOCKER_HOST is the remote dind sidecar, so "-v
+        # ${PWD}:..." would mount a path on ITS filesystem, not this job
+        # container's checkout. Pipe the manifests over stdin instead —
+        # stdin/stdout cross the remote-daemon boundary fine, filesystem
+        # paths don't (same root cause as the postgres services: fix above).
+        run: |
+          (cat k8s/10-postgres.yaml; echo '---'; cat k8s/11-postgres-longhorn-pvc.yaml) | \
+            docker run --rm -i \
+            ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e \
+            -strict -summary -
+
+  mcp:
+    runs-on: python
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  documentation:
+    runs-on: node
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  build-and-push:
+    name: build + push images
+    needs: [application, kubernetes, mcp]
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: echo "$HARBOR_PASSWORD" | docker login registry.cdot.io -u "$HARBOR_USERNAME" --password-stdin
+      - uses: docker/setup-buildx-action@v4
+      - name: Build + push clippy-chat
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            registry.cdot.io/clippy/clippy-chat:sha-${{ github.sha }}
+            registry.cdot.io/clippy/clippy-chat:latest
+          build-args: |
+            NPM_CONFIG_REGISTRY=${{ env.NPM_CONFIG_REGISTRY }}
+          platforms: linux/amd64
+      - name: Build + push clippy-mcp
+        uses: docker/build-push-action@v7
+        with:
+          context: mcp-server
+          file: mcp-server/Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            registry.cdot.io/clippy/clippy-mcp:sha-${{ github.sha }}
+            registry.cdot.io/clippy/clippy-mcp:latest
+          platforms: linux/amd64
