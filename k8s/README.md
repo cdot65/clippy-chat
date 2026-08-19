@@ -29,7 +29,8 @@ are reachable by the Connect operator. Field labels must match Secret keys 1:1:
 | `Talos - Clippy MCP` | `clippy-mcp-secrets` | `BRAVE_API_KEY`, `SCM_CLIENT_ID`, `SCM_CLIENT_SECRET`, `SCM_TSG_ID` |
 | `Truffles - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
 
-Bootstrap / refresh from the live namespace (preserves current values):
+Bootstrap / refresh AI Security Academy items from the live namespace
+(preserves current values). The scoped Truffles item is managed separately.
 
 ```bash
 ./scripts/sync-clippy-secrets-to-1password.sh
