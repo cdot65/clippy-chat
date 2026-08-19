@@ -54,21 +54,6 @@ spec:
               value: "clippy-api"
             - name: MCP_SERVER_URL
               value: "http://clippy-mcp.clippy.svc.cluster.local:8080/mcp"
-            - name: MCP_TOKEN_URL
-              valueFrom:
-                secretKeyRef:
-                  name: clippy-mcp-client
-                  key: MCP_TOKEN_URL
-            - name: MCP_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: clippy-mcp-client
-                  key: MCP_CLIENT_ID
-            - name: MCP_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: clippy-mcp-client
-                  key: MCP_CLIENT_SECRET
           resources:
             requests:
               cpu: 50m
