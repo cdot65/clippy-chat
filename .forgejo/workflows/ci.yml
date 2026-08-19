@@ -20,22 +20,16 @@ permissions:
 jobs:
   application:
     runs-on: node
-    services:
-      postgres:
-        image: postgres@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317 # 17.10
-        env:
-          POSTGRES_USER: clippy
-          POSTGRES_PASSWORD: clippy
-          POSTGRES_DB: clippy
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U clippy -d clippy"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
-      DATABASE_URL: postgres://clippy:clippy@localhost:5433/clippy
+      # 172.17.0.1 is the dind sidecar's bridge gateway, not "localhost" —
+      # the "services:" convenience feature publishes container ports on the
+      # REMOTE dind daemon (DOCKER_HOST is a remote tcp:// endpoint on this
+      # runner pool), not on this job container's own network namespace, so
+      # a GitHub-Actions-style "services:" block's implicit localhost:PORT
+      # never resolves here. Postgres is started explicitly below instead,
+      # on the same dind daemon docker/build-push-action already reaches via
+      # this same gateway (see forgejo/runner-deployment.yaml).
+      DATABASE_URL: postgres://clippy:clippy@172.17.0.1:5433/clippy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -45,6 +39,27 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
+      - name: Start Postgres
+        run: |
+          # The container runs on the persistent dind daemon, not this
+          # ephemeral job container — clean up any leftover from a prior
+          # run with the same name before starting a fresh one.
+          docker rm -f clippy-ci-pg >/dev/null 2>&1 || true
+          docker run -d --name clippy-ci-pg \
+            -e POSTGRES_USER=clippy -e POSTGRES_PASSWORD=clippy -e POSTGRES_DB=clippy \
+            -p 5433:5432 \
+            postgres@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317 # 17.10
+
+          for attempt in {1..30}; do
+            if docker exec clippy-ci-pg pg_isready -U clippy -d clippy >/dev/null 2>&1; then
+              break
+            fi
+            if [[ "${attempt}" == 30 ]]; then
+              docker logs clippy-ci-pg
+              exit 1
+            fi
+            sleep 1
+          done
       - run: npm ci
       - name: Sync MCP test server
         working-directory: mcp-server
@@ -72,6 +87,9 @@ jobs:
           npm test
           npm run build
           npm run typecheck
+      - name: Stop Postgres
+        if: always()
+        run: docker rm -f clippy-ci-pg >/dev/null 2>&1 || true
 
   kubernetes:
     runs-on: docker
@@ -85,12 +103,16 @@ jobs:
       - name: Verify storage contract
         run: npm test -- k8s/storage.contract.test.ts
       - name: Validate PostgreSQL manifest schemas
-        run: >-
-          docker run --rm -v "${PWD}:/work:ro"
-          ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e
-          -strict -summary
-          /work/k8s/10-postgres.yaml
-          /work/k8s/11-postgres-longhorn-pvc.yaml
+        # No bind mount: DOCKER_HOST is the remote dind sidecar, so "-v
+        # ${PWD}:..." would mount a path on ITS filesystem, not this job
+        # container's checkout. Pipe the manifests over stdin instead —
+        # stdin/stdout cross the remote-daemon boundary fine, filesystem
+        # paths don't (same root cause as the postgres services: fix above).
+        run: |
+          (cat k8s/10-postgres.yaml; echo '---'; cat k8s/11-postgres-longhorn-pvc.yaml) | \
+            docker run --rm -i \
+            ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e \
+            -strict -summary -
 
   mcp:
     runs-on: python
