@@ -20,6 +20,18 @@ const sidebars: SidebarsConfig = {
         'red-team/running-a-scan',
       ],
     },
+    {
+      type: 'category',
+      label: 'AI Gateway & MCP Security',
+      collapsed: false,
+      link: {type: 'doc', id: 'security/overview'},
+      items: [
+        'security/architecture',
+        'security/e2e-testing',
+        'security/production-evidence',
+        'security/operations',
+      ],
+    },
     'architecture',
     {
       type: 'category',

@@ -1,0 +1,183 @@
+---
+id: architecture
+title: AI Gateway and MCP architecture
+sidebar_label: Architecture
+description: Trust boundaries, claim enforcement, and request workflows for Clippy MCP.
+---
+
+# AI Gateway and MCP architecture
+
+## System topology
+
+```mermaid
+flowchart LR
+  subgraph IdP[Truffles Keycloak]
+    Token[Token endpoint]
+    JWKS[JWKS endpoint]
+  end
+
+  subgraph Clients[Callers]
+    Human[Customer agent]
+    Chat[Clippy Chat app]
+    RedTeam[AI Red Team adapter]
+  end
+
+  subgraph AIRS[Portkey AI Gateway / AIRS]
+    Org[Gateway authentication]
+    Route[Workspace + MCP route]
+    JWT[Per-server JWT validation]
+    Forward[Identity forwarding]
+  end
+
+  subgraph Cluster[Talos cluster]
+    Clippy[clippy-mcp]
+    Agent[agent-gateway-mcp]
+    Tools[Read-only and SCM tools]
+  end
+
+  Human -->|client credentials| Token
+  Chat -->|client credentials| Token
+  RedTeam -->|client credentials| Token
+  Token -->|JWT| Clients
+  Clients -->|x-portkey-api-key + X-Auth-Token| Org
+  JWKS -->|public keys| Org
+  JWKS -->|public keys| JWT
+  Org --> Route --> JWT --> Forward
+  Forward -->|Authorization: Bearer JWT| Clippy
+  Forward -->|Authorization: Bearer JWT| Agent
+  JWKS -->|independent verification| Clippy
+  Clippy --> Tools
+```
+
+The public endpoint is AIRS. `clippy-mcp` is a ClusterIP-only service: AIRS reaches it through
+the registered upstream, but there is no public Kubernetes ingress. The application can call it
+directly inside the cluster and mints its own `clippy-mcp-client` token.
+
+## Org-level JWKS request
+
+This is the production external request. The JWT has both Portkey organization/workspace claims
+and the Clippy permission claims.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as MCP client
+  participant K as Truffles Keycloak
+  participant G as AIRS gateway
+  participant M as clippy-mcp
+  participant J as Keycloak JWKS
+
+  C->>K: client_credentials for clippy-mcp-client
+  K-->>C: RS256 JWT, aud=clippy, scope=mcp.invoke
+  C->>G: POST /workspace/clippy/mcp<br/>x-portkey-api-key: JWT<br/>X-Auth-Token: Bearer JWT
+  G->>J: Fetch/cache signing keys
+  J-->>G: JWKS
+  G->>G: Authenticate org/workspace
+  G->>G: Validate server claim policy
+  G->>M: POST /mcp<br/>Authorization: Bearer JWT
+  M->>J: Fetch/cache signing keys
+  J-->>M: JWKS
+  M->>M: Verify signature + iss/aud/azp/scope/workspace
+  M-->>G: JSON-RPC result
+  G-->>C: HTTP 200 SSE result
+```
+
+There are two cryptographic validations of the identity token: at AIRS and at `clippy-mcp`.
+The second check is deliberate defense in depth, not duplicate gateway authentication.
+
+## Workspace key plus JWT Validator Guardrail
+
+This is the customer pattern when the IdP token does not carry Portkey organization claims.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Customer agent
+  participant I as Auth0 / customer IdP
+  participant G as AIRS gateway
+  participant M as Customer MCP server
+
+  C->>I: OAuth grant
+  I-->>C: Identity JWT
+  C->>G: x-portkey-api-key: gateway key<br/>X-Auth-Token: Bearer identity JWT
+  G->>G: 1. Validate gateway key
+  alt gateway credential invalid
+    G-->>C: 401
+  else gateway credential valid
+    G->>G: 2. Validate identity JWT against IdP JWKS
+    alt claims invalid
+      G-->>C: 401 or 403
+    else claims valid
+      G->>M: Authorization: Bearer identity JWT
+      M->>M: Enforce destination authorization
+      M-->>G: MCP response
+      G-->>C: MCP response
+    end
+  end
+```
+
+The two header values are different in this mode. `$JWT` is not a gateway key unless it carries
+the configured Portkey organization claims.
+
+## Clippy Chat internal request
+
+The web app does not send its browser/user session token to MCP. The server-side application
+mints a scoped machine token, caches it until 30 seconds before expiry, and supplies it directly
+to the internal MCP server.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Browser
+  participant A as clippy-chat
+  participant K as Truffles Keycloak
+  participant M as clippy-mcp ClusterIP
+
+  B->>A: Authenticated /api/chat request
+  A->>A: Resolve web or machine identity
+  A->>K: client_credentials (clippy-mcp-client)
+  K-->>A: scoped MCP JWT
+  A->>M: Authorization: Bearer JWT
+  M->>M: Verify forwarded-token policy
+  M-->>A: tools/list or tools/call
+  A-->>B: model/tool response
+```
+
+## Authorization decision
+
+```mermaid
+flowchart TD
+  R[Incoming AIRS MCP request] --> G{Gateway credential valid?}
+  G -- No --> U1[401 reject]
+  G -- Yes --> H{X-Auth-Token exactly<br/>Bearer JWT?}
+  H -- No --> U2[401 reject]
+  H -- Yes --> S{RS256 signature and<br/>required claims valid?}
+  S -- No --> U3[401 reject]
+  S -- Yes --> P{iss, aud, azp, scope,<br/>workspace match route?}
+  P -- No --> F1[401 or 403 reject]
+  P -- Yes --> W[Forward JWT upstream]
+  W --> D{Destination verifies<br/>same authorization?}
+  D -- No --> F2[Fail closed]
+  D -- Yes --> OK[Execute MCP method]
+```
+
+## Trust boundaries
+
+| Boundary | Trusted input | Rejected input |
+| --- | --- | --- |
+| Keycloak token endpoint | Registered confidential client and secret | Wrong/disabled client, wrong secret |
+| AIRS org authentication | Gateway key or verified org-claim JWT | Missing/malformed/wrong-org credential |
+| AIRS MCP registration | Token matching exact server policy | Wrong audience/client/scope/workspace |
+| `clippy-mcp` | Forwarded RS256 bearer matching environment policy | Missing, duplicate, malformed, expired, or mismatched bearer |
+| Tool layer | Authorized JSON-RPC method and validated arguments | Unknown method/tool or invalid arguments |
+
+## Deployment ownership
+
+| Component | Source of truth | Deployment |
+| --- | --- | --- |
+| Clippy app and MCP server | [Clippy Forgejo](https://git.cdot.io/cdot.io/clippy-chat) | Forgejo CI builds immutable Harbor images; Argo CD applies manifests |
+| Keycloak realm/client projection | Talos cluster repository | Declarative stack projection and lifecycle scripts |
+| AIRS and MCP registrations | Talos cluster repository | Helm/Argo plus guarded cutover scripts |
+| Public Docusaurus docs | Clippy Forgejo, mirrored to GitHub | GitHub Pages workflow on mirrored `main` |
+
+For exact values and test expectations, continue to [E2E testing](./e2e-testing).

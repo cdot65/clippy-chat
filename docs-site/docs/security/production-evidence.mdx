@@ -1,0 +1,249 @@
+---
+id: production-evidence
+title: Production evidence — 2026-08-19
+sidebar_label: Production evidence
+description: Sanitized real requests, responses, authorization matrix, and restart proof from production.
+---
+
+# Production evidence — 2026-08-19
+
+This page is a secret-free handoff derived from real production requests. JWTs, client secrets,
+gateway keys, session identifiers, and full Secret objects are not retained. `[REDACTED ...]`
+marks removed credential material. JSON-RPC request IDs are documentation labels; response bodies
+otherwise preserve the observed protocol/status data, with long tool schemas reduced to names.
+
+## Evidence provenance
+
+| Event | Time (America/Chicago) | Result |
+| --- | --- | --- |
+| Cutover annotation | 2026-08-19 14:14:03 CDT | Recorded on AIRS deployment |
+| Transition matrix | 2026-08-19 14:19:18 CDT | Pass |
+| Final matrix after restarts | 2026-08-19 15:02:23 CDT | Pass |
+| Final matrix after source retirement | 2026-08-19 15:14:07 CDT | Pass |
+| Fresh documentation probes | 2026-08-19 15:57 CDT | Pass |
+
+Original evidence is private, mode `0600`, under the operator's local state directory. It contains
+only selected claims, status codes, tool names, and epochs—no encoded tokens or secrets.
+
+Production deployments during the fresh probe:
+
+| Workload | Ready | Immutable image |
+| --- | --- | --- |
+| `clippy-chat` | 2/2 | `sha-fe3b2a2...` + digest `sha256:3b9104b4...` |
+| `clippy-mcp` | 1/1 | `sha-fe3b2a2...` + digest `sha256:4b57c11d...` |
+| `agent-gateway-mcp` | 2/2 | digest `sha256:02750150...` |
+
+## Real token response (sanitized)
+
+Request:
+
+```http
+POST https://auth.dev.cdot.io/realms/truffles/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=clippy-mcp-client&client_secret=[REDACTED CLIENT SECRET]
+```
+
+Observed response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "access_token": "[REDACTED JWT]",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "mcp.invoke"
+}
+```
+
+Selected claims observed during the final matrix:
+
+```json
+{
+  "iss": "https://auth.dev.cdot.io/realms/truffles",
+  "aud": ["clippy", "stack-clippy"],
+  "azp": "clippy-mcp-client",
+  "scope": "mcp.invoke",
+  "portkey_oid": "80f1e8db-1efe-49a7-a45b-b45cade4d861",
+  "portkey_workspace": "ws-produc-985697"
+}
+```
+
+The selected claims are routing/authorization metadata, not the credential itself.
+
+## Real initialize request and response
+
+Request:
+
+```http
+POST https://mcp-airs.cdot.io/ws-produc-985697/clippy/mcp
+x-portkey-api-key: [REDACTED JWT]
+X-Auth-Token: Bearer [REDACTED JWT]
+Content-Type: application/json
+Accept: application/json, text/event-stream
+
+{"jsonrpc":"2.0","id":"docs-init","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ai-security-handoff","version":"1.0"}}}
+```
+
+Observed response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+event: message
+data: {"jsonrpc":"2.0","id":"docs-init","result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{},"prompts":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"clippy-tools","version":"1.28.1"}}}
+```
+
+## Real tools/list request and response
+
+Request body:
+
+```json
+{"jsonrpc":"2.0","id":"docs-tools","method":"tools/list","params":{}}
+```
+
+Observed response was HTTP `200` with full MCP schemas. Reduced only to exact tool names:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "docs-tools",
+  "result": {
+    "tools": [
+      "get_current_datetime",
+      "get_weather",
+      "get_daily_news",
+      "web_search",
+      "get_mlb_scores",
+      "polymarket_bets",
+      "scm_config"
+    ]
+  }
+}
+```
+
+## Real safe tool request and response
+
+Request body:
+
+```json
+{"jsonrpc":"2.0","id":"docs-call","method":"tools/call","params":{"name":"get_current_datetime","arguments":{}}}
+```
+
+Observed response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+event: message
+data: {"jsonrpc":"2.0","id":"docs-call","result":{"content":[{"type":"text","text":"{\n  \"date\": \"2026-08-19\",\n  \"time\": \"15:57\",\n  \"weekday\": \"Wednesday\",\n  \"timezone\": \"America/Chicago\",\n  \"utc_offset\": \"-0500\"\n}"}],"isError":false}}
+```
+
+## Real denial responses
+
+Missing both headers:
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+
+{"error":"unauthorized","error_description":"Authentication required to access this resource"}
+```
+
+Valid Clippy credentials sent to the wrong workspace route:
+
+```http
+POST https://mcp-airs.cdot.io/wrong-workspace/clippy/mcp
+x-portkey-api-key: [REDACTED JWT]
+X-Auth-Token: Bearer [REDACTED JWT]
+
+HTTP/1.1 403 Forbidden
+{"error":"forbidden","error_description":"You do not have access to this resource"}
+```
+
+## Final authorization matrix
+
+All values below are from the final post-retirement evidence.
+
+| Probe | HTTP | Interpretation |
+| --- | ---: | --- |
+| `inference` | 200 | Inference client retained access |
+| `agent_gateway` | 200 | Agent Gateway initialize/list succeeded |
+| `clippy` | 200 | Clippy initialize/list succeeded |
+| `isolated_agent_to_clippy` | 401 | Fresh Agent token rejected by Clippy |
+| `isolated_clippy_to_agent` | 401 | Fresh Clippy token rejected by Agent Gateway |
+| `distinct_agent_gateway` | 200 | Separate gateway and identity credentials accepted |
+| `distinct_clippy` | 200 | Separate gateway and identity credentials accepted |
+| `missing_agent` | 401 | No credentials rejected |
+| `missing_clippy` | 401 | No credentials rejected |
+| `missing_gateway_agent` | 401 | Gateway layer required |
+| `missing_gateway_clippy` | 401 | Gateway layer required |
+| `missing_identity_agent` | 401 | Per-server identity required |
+| `missing_identity_clippy` | 401 | Per-server identity required |
+| `wrong_gateway_agent` | 401 | Malformed gateway credential rejected |
+| `malformed_token` | 401 | Malformed identity rejected |
+| `wrong_audience` | 401 | Wrong signed audience rejected |
+| `wrong_scope` | 401 | Token lacking `mcp.invoke` rejected |
+| `wrong_workspace` | 403 | Workspace isolation enforced |
+| `clippy_safe_call` | 200 | Real `get_current_datetime` execution succeeded |
+| `inference_to_agent` | 401 | Inference identity cannot invoke Agent MCP |
+| `inference_to_clippy` | 401 | Inference identity cannot invoke Clippy MCP |
+| `agent_to_clippy` | 500 | Cached gateway validation; upstream Clippy still rejected |
+| `clippy_to_agent` | 500 | Cached gateway validation; upstream Agent still rejected |
+| `agent_to_inference` | 403 | Agent identity cannot invoke inference |
+| `clippy_to_inference` | 403 | Clippy identity cannot invoke inference |
+| `post_restart_agent` | 200 | Agent Gateway ready after restart |
+| `post_restart_clippy` | 200 | Clippy ready after restart |
+
+### Why two cross-server probes show 500
+
+AIRS 2.15 can reuse a token-global validation-cache result after the same token was accepted on
+its correct registration. In the cached cross-server probes, AIRS forwarded the wrong identity;
+the destination MCP server independently returned `401`; AIRS exposed that upstream denial as
+`500`. This is fail-closed, not authorization success. Fresh isolated tokens returned direct
+`401`, proving registration isolation without the cache interaction.
+
+Reviewers should accept `500` only for this specifically identified cached cross-server case,
+and only while server logs/evidence prove upstream `401`. All other authorization negatives must
+return `401` or `403`.
+
+## Exact post-restart tool parity
+
+Agent Gateway:
+
+```text
+agent_list, delivery_ack, delivery_nak, inbox_pull, message_search, message_send,
+session_heartbeat, task_publish, task_update, thread_get, topic_subscribe, topic_unsubscribe
+```
+
+Clippy:
+
+```text
+get_current_datetime, get_daily_news, get_mlb_scores, get_weather, polymarket_bets,
+scm_config, web_search
+```
+
+Both arrays matched their pre-restart baselines exactly.
+
+## Client retirement proof
+
+The following source clients were disabled in `agent-mesh` only after destination credentials,
+config, protocol mappers, client roles/scopes, and all six required `realm-management` direct and
+scope roles matched in `truffles`, then the old 900-second token lifetime expired:
+
+```text
+ag-0090212860eec4eabff8cf9f0ab19852
+ag-560d2489a782793f222c1024973143db
+ag-c7f40b285da4d06578d6935f4311fe7e
+ag-f378d91646c512c141f341c4d20e24a8
+agent-gateway-provisioner
+airs-gw-m2m
+dubs-god-airs-gw
+openclaw-airs-gw
+```
+
+The post-retirement final matrix then repeated with the same pass result.

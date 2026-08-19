@@ -8,7 +8,8 @@ sidebar_position: 3
 
 Clippy Chat is a **single deployable Node app**. One [TanStack Start](https://tanstack.com/start)
 server renders the React SSR UI *and* serves the file-based JSON/SSE API routes. It talks to
-Postgres (persistence), a vLLM server (inference), and an OIDC provider (web-user auth).
+Postgres (persistence), a vLLM server (inference), an OIDC provider, and a separate authenticated
+MCP tool server.
 
 ## Request flow
 
@@ -25,14 +26,13 @@ Postgres (persistence), a vLLM server (inference), and an OIDC provider (web-use
    │    src/routes/**  (React pages + /api routes) │
    │    resolveUser → requireUser / requireAdmin   │
    └───────────────┬───────────────┬──────────────┘
-                   │               │
-         /api/chat │               │ all other /api
-                   ▼               ▼
-        ┌──────────────┐   ┌──────────────────┐
-        │ vLLM         │   │ Postgres 17      │
-        │ /v1/chat/... │   │ conversations,   │
-        │ stream:true  │   │ messages, users  │
-        └──────────────┘   └──────────────────┘
+              ┌────┴─────────┬───────────────┐
+              ▼              ▼               ▼
+        ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
+        │ vLLM         │ │ clippy-mcp   │ │ Postgres 17      │
+        │ /v1/chat/... │ │ bearer auth  │ │ conversations,   │
+        │ stream:true  │ │ tools        │ │ messages, users  │
+        └──────────────┘ └──────────────┘ └──────────────────┘
 ```
 
 - **Browser → UI.** React pages (`index.tsx`, `login.tsx`, `admin.tsx`, `c.$conversationId.tsx`)
@@ -47,6 +47,13 @@ Postgres (persistence), a vLLM server (inference), and an OIDC provider (web-use
 - **API → OIDC provider.** `openid-client` handles auth-code + PKCE for web login
   (`src/lib/auth/oidc.ts`); `jose` verifies machine JWTs against the provider's remote JWKS
   (`src/lib/auth/bearer.ts`).
+- **API → MCP.** Server-side code mints/caches a `clippy-mcp-client` token and sends it as
+  `Authorization: Bearer` to the ClusterIP-only `clippy-mcp` service. The MCP server independently
+  validates issuer, audience, client, scope, workspace, signature, and lifetime.
+
+External callers use AIRS instead of the ClusterIP. See the
+**[AI Gateway and MCP architecture](/security/architecture)** for both two-stage header modes,
+identity forwarding, trust boundaries, and production diagrams.
 
 ## The HTML shell
 

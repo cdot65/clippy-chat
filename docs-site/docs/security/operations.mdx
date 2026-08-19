@@ -1,0 +1,187 @@
+---
+id: operations
+title: AI Gateway MCP operations
+sidebar_label: Operations
+description: Configuration, rotation, troubleshooting, rollback, and incident guidance for Clippy MCP authorization.
+---
+
+# AI Gateway MCP operations
+
+## Production inventory
+
+| Item | Value |
+| --- | --- |
+| Realm | `truffles` |
+| Token endpoint | `https://auth.dev.cdot.io/realms/truffles/protocol/openid-connect/token` |
+| JWKS endpoint | `https://auth.dev.cdot.io/realms/truffles/protocol/openid-connect/certs` |
+| Workspace | `ws-produc-985697` |
+| Clippy AIRS route | `https://mcp-airs.cdot.io/ws-produc-985697/clippy/mcp` |
+| Agent Gateway AIRS route | `https://mcp-airs.cdot.io/ws-produc-985697/agent-gateway/mcp` |
+| Clippy upstream | `http://clippy-mcp.clippy.svc.cluster.local:8080/mcp` |
+| Clippy OAuth client | `clippy-mcp-client` |
+| Permission | `mcp.invoke` |
+
+## AIRS registration contract
+
+The Clippy registration must contain equivalent policy to:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://auth.dev.cdot.io/realms/truffles/protocol/openid-connect/certs",
+    "algorithms": ["RS256"],
+    "headerKey": "X-Auth-Token",
+    "requiredClaims": ["sub", "aud", "azp", "scope", "portkey_workspace"],
+    "claimValues": {
+      "iss": {"values": "https://auth.dev.cdot.io/realms/truffles", "matchType": "exact"},
+      "aud": {"values": ["clippy"], "matchType": "contains"},
+      "azp": {"values": "clippy-mcp-client", "matchType": "exact"},
+      "scope": {"values": ["mcp.invoke"], "matchType": "containsAll"},
+      "portkey_workspace": {"values": "ws-produc-985697", "matchType": "exact"}
+    }
+  },
+  "user_identity_forwarding": {
+    "method": "bearer"
+  }
+}
+```
+
+Treat this as a conceptual projection. The Talos cluster repository is authoritative for the
+exact Portkey/AIRS registration schema used by the installed chart/version.
+
+## Destination enforcement
+
+`clippy-mcp` receives the validated identity as `Authorization: Bearer <JWT>`. Environment values
+must stay aligned with the AIRS registration:
+
+```text
+MCP_OIDC_ISSUER=https://auth.dev.cdot.io/realms/truffles
+MCP_OIDC_AUDIENCE=clippy
+MCP_OIDC_AUTHORIZED_PARTY=clippy-mcp-client
+MCP_OIDC_REQUIRED_SCOPE=mcp.invoke
+MCP_OIDC_WORKSPACE=ws-produc-985697
+```
+
+The server derives the JWKS URI from the issuer, permits only RS256, requires expiry/issued-at,
+and checks `aud`, `azp`, `scope`, and `portkey_workspace`. `/healthz` is the only excluded path.
+
+## Secret ownership
+
+- `clippy-mcp-client` is a OnePasswordItem projected from the **Truffles** vault.
+- Clippy application/MCP downstream secrets remain in **AI Security Academy**.
+- Kubernetes Secrets are reconciled objects, not the source of truth.
+- Never copy secret values into manifests, Argo parameters, Forgejo variables, evidence, or docs.
+- Never put admin passwords, client secrets, gateway keys, or JWTs in argv.
+- Use stdin for token request bodies and curl header files (`-H @-`).
+
+## Rotation procedure
+
+1. Create/rotate the destination credential in Keycloak and its scoped 1Password item.
+2. Wait for `clippy-mcp-client` Secret reconciliation.
+3. Prove the app can mint a token from the live Secret and verify selected claims.
+4. Run initialize, tools/list, and safe tools/call through AIRS.
+5. Run direct internal app-to-MCP coverage.
+6. Restart `clippy-chat`; confirm 2/2 Ready and no token-mint errors.
+7. Repeat the positive and negative matrix.
+8. Retain old credential only for the approved overlap window; then revoke it.
+
+Changing a confidential-client secret does not invalidate already issued JWTs. Plan for the
+configured token lifetime and AIRS validation-cache behavior.
+
+## JWKS key rotation
+
+Portkey caches JWKS, and `clippy-mcp` caches the JWK set for five minutes. During rotation:
+
+1. publish the new signing key before issuing tokens with its `kid`;
+2. retain the old public key until all old tokens and caches expire;
+3. mint a new token and run the full positive path;
+4. verify malformed/old-key tokens fail after retirement;
+5. remove the old key only after the overlap window.
+
+Never solve a rotation problem by disabling claim or signature validation.
+
+## Deployment procedure
+
+Clippy is a **Forgejo repository**. The normal path is:
+
+1. Forgejo issue and `cdot65/` branch;
+2. tests and review in Forgejo;
+3. Forgejo CI builds immutable digest-pinned images in Harbor;
+4. manifest commit references the published digest;
+5. Argo CD syncs the immutable manifest;
+6. rollout readiness completes;
+7. execute [E2E testing](./e2e-testing);
+8. record [production evidence](./production-evidence).
+
+GitHub is only a push mirror and Docusaurus publication target. Do not open the authoritative
+implementation issue or pull request there.
+
+## Troubleshooting by status
+
+| Symptom | Likely boundary | Checks |
+| --- | --- | --- |
+| `401 Authentication required` | Gateway authentication | `x-portkey-api-key` present; org claims/key valid |
+| `401` with both headers | JWT validation | Bearer prefix, signature, issuer, audience, `azp`, scope, expiry |
+| `403 wrong workspace` | Routing/tenant policy | URL workspace equals `portkey_workspace` and registration |
+| `500` only after prior token use | AIRS validation cache + upstream denial | Confirm destination logged `401`; retry fresh token |
+| `500` for positive request | Upstream/service failure | AIRS logs, endpoints, MCP readiness, destination auth logs |
+| `200` initialize but empty tools | MCP protocol/readiness defect | Fail immediately; inspect tools/list body and server logs |
+| App reports token request failure | Keycloak or reconciled Secret | token URL/client ID, Secret age, client enabled, credential parity |
+| App works; external AIRS fails | Gateway registration/header contract | Compare AIRS policy, route, and `X-Auth-Token: Bearer` |
+| AIRS works; direct app route fails | Destination enforcement/app credentials | app token claims and `clippy-mcp` environment |
+
+## Logs without credential leakage
+
+Safe fields:
+
+- timestamp, route, HTTP status, request correlation ID;
+- selected claim names/decisions, never the encoded JWT;
+- issuer, audience, client ID, scope names, workspace;
+- image digest, pod name, restart count;
+- MCP method/tool name and JSON-RPC error code.
+
+Unsafe fields:
+
+- raw headers, form bodies, full token responses;
+- cookies, client secrets, gateway keys, admin credentials;
+- decoded claims containing customer personal data unless specifically approved.
+
+Search application logs for stable error classes, not tokens:
+
+```bash
+kubectl -n clippy logs deployment/clippy-mcp --since=15m |
+  grep -E 'unauthorized|invalid forwarded token|missing required scope'
+kubectl -n clippy logs deployment/clippy-chat --since=15m |
+  grep -E 'MCP token request failed|invalid MCP token response'
+```
+
+## Rollback conditions
+
+Rollback or stop the rollout if any occurs:
+
+- a positive request is not HTTP `200`;
+- exact tools differ before/after restart;
+- a missing or mismatched credential reaches a tool;
+- Clippy/Agent/inference identities cross stack boundaries;
+- destination credentials or required mappings are not exact;
+- a Secret cannot reconcile from its intended vault;
+- evidence includes secret material;
+- readiness exceeds its bounded deadline.
+
+Rollback must restore the complete captured state: AIRS registration, JWKS configuration,
+workload token URLs/registries, Argo application state, annotations, and source-client status.
+After rollback, rerun the previous realm's positive matrix and all cross-stack denials.
+
+## Incident containment
+
+For suspected credential exposure:
+
+1. identify which layer leaked: gateway key, client secret, or issued JWT;
+2. revoke/rotate only the exact credential first;
+3. disable the affected client if active abuse is possible;
+4. preserve secret-free request IDs/timestamps for investigation;
+5. confirm both AIRS and destination denials with newly invalid credentials;
+6. restore via 1Password/Keycloak declarative ownership;
+7. execute the complete E2E plan before reopening access.
+
+Do not publish captured credentials to Forgejo, GitHub, Obsidian, chat, or incident tickets.

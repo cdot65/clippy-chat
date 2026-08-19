@@ -17,6 +17,10 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 | `50-ingressroute.yaml` | Traefik IngressRoutes |
 | `60-mcp.yaml` | MCP Deployment + ClusterIP Service (no Ingress) |
 
+External AIRS routing, OAuth/JWKS claim enforcement, request diagrams, test curls, and sanitized
+production responses are documented in the
+[AI Gateway MCP security handoff](../docs-site/docs/security/overview.mdx).
+
 ## Secrets
 
 Vaults: **AI Security Academy** and scoped **Truffles** client credentials. Both
@@ -44,7 +48,7 @@ Still out-of-band (not in this directory):
 
 ## PostgreSQL storage migration
 
-Issue [`#11`](https://github.com/cdot65/clippy-chat/issues/11) tracks moving PostgreSQL from
+Issue [`#11`](https://git.cdot.io/cdot.io/clippy-chat/issues/11) tracks moving PostgreSQL from
 the talos1-local `clippy-postgres-data-clippy-postgres-0` claim to Longhorn. The migration is
 split into separately reviewed changes:
 

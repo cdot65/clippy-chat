@@ -18,11 +18,11 @@ The `Dockerfile` is a two-stage build:
 
 ```bash
 # Talos is amd64 — Dockerfiles pin linux/amd64; keep the flag explicit when building
-docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-chat:latest .
-docker push registry.cdot.io/clippy/clippy-chat:latest
+docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-chat:sha-$GIT_SHA .
+docker push registry.cdot.io/clippy/clippy-chat:sha-$GIT_SHA
 
-docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-mcp:latest mcp-server
-docker push registry.cdot.io/clippy/clippy-mcp:latest
+docker build --platform linux/amd64 -t registry.cdot.io/clippy/clippy-mcp:sha-$GIT_SHA mcp-server
+docker push registry.cdot.io/clippy/clippy-mcp:sha-$GIT_SHA
 ```
 
 Forgejo CI (`.forgejo/workflows/ci.yml`) builds and pushes both images automatically on every push
@@ -40,6 +40,7 @@ to `main` — the commands above are for building locally, not the normal path.
 | **Postgres 17** | conversations, messages, users, sessions |
 | **vLLM** (OpenAI-compatible) | inference — `POST /v1/chat/completions`, `stream: true` |
 | **OIDC provider** (e.g. Keycloak) | web-user login + machine tokens |
+| **Clippy MCP** | authenticated tool execution with an independent scoped JWT |
 
 All configuration is via [environment variables](/reference/configuration). Provide secrets
 (`SESSION_SECRET`, `KC_CLIENT_SECRET`, `ADMIN_PASSWORD`, and `VLLM_API_KEY` if used) through your
@@ -76,18 +77,22 @@ env:
 :::warning Examples and production manifests differ
 The snippets above are portable examples with placeholders (`chat.example.com`,
 `auth.example.com`, `REPLACE_ME`). This repository also ships the Argo-managed production raw
-manifests under [`k8s/`](https://github.com/cdot65/clippy-chat/tree/main/k8s). They reference
+manifests under [`k8s/`](https://git.cdot.io/cdot.io/clippy-chat/src/branch/main/k8s). They reference
 OnePasswordItem resources and never contain secret values. Review `k8s/README.md`; do not hand-apply
 production changes while Argo manages the Application.
 :::
+
+The production MCP route and its OAuth/JWKS policy are documented in
+**[AI Gateway MCP operations](/security/operations)**. Deploy image digests before Argo rollout,
+then execute the [E2E security plan](/security/e2e-testing).
 
 Because the app runs multiple replicas, its code already handles the concurrency that implies
 (admin bootstrap, conversation-create races) — see [Architecture](/architecture#multi-replica-awareness).
 
 ## Documentation site (this site)
 
-These docs are a Docusaurus site under `docs-site/`, published to **GitHub Pages by GitHub
-Actions** on every push to `main` that touches `docs-site/**`
+These docs are a Docusaurus site under `docs-site/`. Forgejo is authoritative; its `main` branch
+is pushed to a read-only GitHub mirror, then **GitHub Pages** publishes on changes to `docs-site/**`
 (`.github/workflows/deploy-docs.yml`). The workflow builds `docs-site/` and deploys the static
 output — it never runs the app or handles app secrets.
 

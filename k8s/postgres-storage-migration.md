@@ -1,6 +1,6 @@
 # PostgreSQL local-path to Longhorn
 
-Tracking: [clippy-chat#11](https://github.com/cdot65/clippy-chat/issues/11)
+Tracking: [clippy-chat#11](https://git.cdot.io/cdot.io/clippy-chat/issues/11)
 
 This is an operator-run cutover. Review commands first; run them from the repository root in one
 Bash shell. Never paste secret values into the shell or artifacts.

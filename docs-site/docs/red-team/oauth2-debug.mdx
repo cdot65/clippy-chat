@@ -7,7 +7,7 @@ sidebar_position: 3
 
 # `clippy_redteam_debug_oauth2.py` — the chat adapter, with identity tracing
 
-The full adapter lives at [`redteam/clippy_redteam_debug_oauth2.py`](https://github.com/cdot65/clippy-chat/blob/main/redteam/clippy_redteam_debug_oauth2.py).
+The full adapter lives at [`redteam/clippy_redteam_debug_oauth2.py`](https://git.cdot.io/cdot.io/clippy-chat/src/branch/main/redteam/clippy_redteam_debug_oauth2.py).
 It targets the **same chat endpoint** as the [main chat adapter](/red-team/adapter) — same
 request/response contract, same SSE parsing — but adds a **full trace of the OAuth2
 `client_credentials` exchange** to stderr. Reach for it when a scan is failing at *auth* and you
