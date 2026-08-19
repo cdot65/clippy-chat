@@ -23,19 +23,6 @@ jobs:
     env:
       DATABASE_URL: postgres://clippy:clippy@localhost:5433/clippy
     steps:
-      # TEMPORARY DIAGNOSTIC — Forgejo's job logs aren't reachable via any
-      # documented API from this environment, so this job's own commands
-      # tee their output into ci-debug.log, and a debug holder container
-      # (unrelated to postgres, guaranteed to exist regardless of what else
-      # fails) receives a copy via `docker cp` at the end — that transfers
-      # bytes over the daemon API connection, unlike a "-v" bind mount,
-      # which only works when the client and daemon share a filesystem.
-      # Remove this step and the "docker cp"/holder-container lines in
-      # "Publish debug log" once the real failure is found and fixed.
-      - name: Start debug holder
-        run: |
-          docker rm -f ci-debug-holder >/dev/null 2>&1 || true
-          docker run -d --name ci-debug-holder alpine sleep 3600
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -45,10 +32,7 @@ jobs:
         with:
           enable-cache: true
       - name: Start Postgres
-        shell: bash
         run: |
-          exec > >(tee -a ci-debug.log) 2>&1
-          echo "=== Start Postgres $(date -u) ==="
           # The container runs on the persistent dind daemon, not this
           # ephemeral job container — clean up any leftover from a prior
           # run with the same name before starting a fresh one.
@@ -60,7 +44,6 @@ jobs:
 
           for attempt in {1..30}; do
             if docker exec clippy-ci-pg pg_isready -U clippy -d clippy >/dev/null 2>&1; then
-              echo "postgres ready after ${attempt} attempt(s)"
               break
             fi
             if [[ "${attempt}" == 30 ]]; then
@@ -100,25 +83,13 @@ jobs:
             const s = net.connect(5433, "127.0.0.1", () => { console.log("RELAY_OK"); s.end(); process.exit(0); });
             s.on("error", (e) => { console.error("RELAY_FAILED", e.message); process.exit(1); });
           '
-      - name: npm ci
-        shell: bash
-        run: |
-          exec > >(tee -a ci-debug.log) 2>&1
-          echo "=== npm ci $(date -u) ==="
-          npm ci
+      - run: npm ci
       - name: Sync MCP test server
         working-directory: mcp-server
-        shell: bash
-        run: |
-          exec > >(tee -a ../ci-debug.log) 2>&1
-          echo "=== uv sync $(date -u) ==="
-          uv sync --locked --group dev
+        run: uv sync --locked --group dev
       - name: Run application gates
         shell: bash
         run: |
-          exec > >(tee -a ci-debug.log) 2>&1
-          echo "=== Run application gates $(date -u) ==="
-
           uv run --project mcp-server uvicorn clippy_mcp.server:app \
             --host 127.0.0.1 --port 8080 >"${RUNNER_TEMP}/clippy-mcp.log" 2>&1 &
           clippy_mcp_pid=$!
@@ -126,29 +97,19 @@ jobs:
 
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null; then
-              echo "mcp healthz ready after ${attempt} attempt(s)"
               break
             fi
             if [[ "${attempt}" == 30 ]]; then
-              echo "=== clippy-mcp.log ==="
               sed -n '1,200p' "${RUNNER_TEMP}/clippy-mcp.log"
               exit 1
             fi
             sleep 1
           done
 
-          echo "--- db:migrate ---"
           npm run db:migrate
-          echo "--- test ---"
           npm test
-          echo "--- build ---"
           npm run build
-          echo "--- typecheck ---"
           npm run typecheck
-      - name: Publish debug log
-        if: always()
-        run: |
-          docker cp ci-debug.log ci-debug-holder:/ci-debug.log 2>&1 || echo "no ci-debug.log to publish (failed before it existed)"
       - name: Stop Postgres
         if: always()
         run: docker rm -f clippy-ci-pg >/dev/null 2>&1 || true
