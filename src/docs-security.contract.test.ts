@@ -24,6 +24,14 @@ describe('AI Gateway MCP security handoff documentation', () => {
     }
 
     expect(sidebar).toContain("label: 'AI Gateway & MCP Security'")
+    for (const id of [
+      'security/architecture',
+      'security/e2e-testing',
+      'security/production-evidence',
+      'security/operations',
+    ]) {
+      expect(sidebar).toContain(`'${id}'`)
+    }
   })
 
   it('documents both authentication modes and exact gateway headers', () => {
@@ -55,5 +63,12 @@ describe('AI Gateway MCP security handoff documentation', () => {
     expect(evidence).toContain('403')
     expect(evidence).toContain('[REDACTED')
     expect(evidence).not.toMatch(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/)
+  })
+
+  it('keeps the required runtime-vault boundary visible', () => {
+    const operations = read('operations.mdx')
+
+    expect(operations).toContain('AI Security Academy - Runtime')
+    expect(operations).toContain('issues/22')
   })
 })
