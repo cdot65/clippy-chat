@@ -20,6 +20,18 @@ let toolsCache: { tools: OpenAiTool[]; at: number } | null = null
 
 export function _resetMcpForTests() { client = null; clientExpiresAt = 0; toolsCache = null }
 
+/** Direct (ClusterIP) `clippy-mcp` verifies a plain forwarded bearer. AIRS does
+ *  not: it authenticates the caller with `x-portkey-api-key` and reads the
+ *  identity from the configured custom header `X-Auth-Token` — sending the
+ *  identity only as `Authorization` is a documented 401 (see the Security
+ *  Handoff header contract). Clippy's org-claim JWT serves as both values.
+ *  AIRS mints the upstream `Authorization: Bearer` itself after validating. */
+function mcpAuthHeaders(accessToken: string): Record<string, string> {
+  return env().MCP_AUTH_MODE === 'gateway'
+    ? { 'x-portkey-api-key': accessToken, 'X-Auth-Token': `Bearer ${accessToken}` }
+    : { Authorization: `Bearer ${accessToken}` }
+}
+
 async function getClient(): Promise<Client | null> {
   const url = env().MCP_SERVER_URL
   if (!url) return null
@@ -28,7 +40,7 @@ async function getClient(): Promise<Client | null> {
   const credential = await getMcpCredential()
   const c = new Client({ name: 'clippy-chat', version: '0.2.0' })
   const transport = new StreamableHTTPClientTransport(new URL(url), {
-    requestInit: { headers: { Authorization: `Bearer ${credential.accessToken}` } },
+    requestInit: { headers: mcpAuthHeaders(credential.accessToken) },
   })
   await c.connect(transport, { timeout: CONNECT_TIMEOUT_MS })
   client = c

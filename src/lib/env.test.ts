@@ -9,13 +9,26 @@ const base = {
 }
 
 describe('parseEnv', () => {
-  it('defaults to the live in-cluster vLLM service', () => {
+  it('defaults to the in-cluster AIRS gateway', () => {
     const env = parseEnv(base)
-    expect(env.VLLM_BASE_URL).toBe('http://vllm-qwen36.vllm.svc.cluster.local:8000')
+    expect(env.VLLM_BASE_URL).toBe('http://airs-gw.airs-gw.svc.cluster.local:80')
   })
-  it('defaults to the model ID served by vLLM', () => {
+  it('defaults to the model ID the gateway serves', () => {
     const env = parseEnv(base)
-    expect(env.VLLM_MODEL).toBe('qwen36-hauhaucs')
+    expect(env.VLLM_MODEL).toBe('@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL')
+  })
+  it('defaults both egress paths to direct so dev and CI keep working', () => {
+    const env = parseEnv(base)
+    expect(env.VLLM_AUTH_MODE).toBe('direct')
+    expect(env.MCP_AUTH_MODE).toBe('direct')
+  })
+  it('rejects gateway inference without a gateway key', () => {
+    expect(() => parseEnv({ ...base, VLLM_AUTH_MODE: 'gateway' })).toThrow(/VLLM_API_KEY/)
+    expect(parseEnv({ ...base, VLLM_AUTH_MODE: 'gateway', VLLM_API_KEY: 'k' }).VLLM_AUTH_MODE)
+      .toBe('gateway')
+  })
+  it('rejects an unknown auth mode rather than silently falling back', () => {
+    expect(() => parseEnv({ ...base, MCP_AUTH_MODE: 'airs' })).toThrow()
   })
   it('applies the machine-token scope default', () => {
     const env = parseEnv(base)

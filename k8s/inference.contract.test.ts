@@ -27,14 +27,29 @@ function envValue(name: string): string | undefined {
   return clippyContainer().env.find((entry: Manifest) => entry.name === name)?.value
 }
 
+// NB: these assertions only prove the manifest says what we think it says —
+// they cannot prove the target resolves. The previous revision passed green
+// through a full production outage because `vllm-qwen36.vllm.svc.cluster.local`
+// had stopped existing (NXDOMAIN) while the YAML still named it. Reachability
+// belongs in a deploy-time smoke check against /v1/models, not in this file.
 describe('production inference contract', () => {
-  it('targets the live in-cluster vLLM service', () => {
-    expect(envValue('VLLM_BASE_URL')).toBe(
-      'http://vllm-qwen36.vllm.svc.cluster.local:8000',
-    )
+  it('routes inference through the AIRS gateway', () => {
+    expect(envValue('VLLM_BASE_URL')).toBe('http://airs-gw.airs-gw.svc.cluster.local:80')
   })
 
-  it('requests the model ID served by vLLM', () => {
-    expect(envValue('VLLM_MODEL')).toBe('qwen36-hauhaucs')
+  it('requests the model ID the gateway serves', () => {
+    expect(envValue('VLLM_MODEL')).toBe('@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL')
+  })
+
+  it('speaks the gateway header contract on both egress paths', () => {
+    // direct-mode headers are a 401 against AIRS — see the Security Handoff
+    expect(envValue('VLLM_AUTH_MODE')).toBe('gateway')
+    expect(envValue('MCP_AUTH_MODE')).toBe('gateway')
+  })
+
+  it('routes MCP through the workspace gateway route', () => {
+    expect(envValue('MCP_SERVER_URL')).toBe(
+      'https://mcp-airs.cdot.io/ws-produc-985697/clippy/mcp',
+    )
   })
 })

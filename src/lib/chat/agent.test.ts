@@ -5,7 +5,13 @@ const callMcpTool = vi.fn()
 vi.mock('./mcp', () => ({ getMcpTools: (...a: unknown[]) => getMcpTools(...a),
   callMcpTool: (...a: unknown[]) => callMcpTool(...a) }))
 const chatStream = vi.fn()
-vi.mock('./vllm', () => ({ chatStream: (...a: unknown[]) => chatStream(...a) }))
+// hoisted with the vi.mock factory — a plain class decl would be in the TDZ there
+const { VllmError } = vi.hoisted(() => ({
+  VllmError: class VllmError extends Error {
+    constructor(readonly status: number, readonly body: string) { super(`vllm error: ${status} ${body}`) }
+  },
+}))
+vi.mock('./vllm', () => ({ chatStream: (...a: unknown[]) => chatStream(...a), VllmError }))
 
 import { agentStream } from './agent'
 
@@ -50,6 +56,47 @@ describe('agentStream', () => {
     const out = await collect(agentStream([{ role: 'user', content: 'x' }]))
     expect(out.filter((e) => (e as { type: string }).type === 'delta')).toHaveLength(1)
     expect((chatStream.mock.calls[4][1] as { tools?: unknown[] }).tools).toBeUndefined()
+  })
+
+  it('retries without tools when vllm 400s the tools payload', async () => {
+    getMcpTools.mockResolvedValue([WEATHER_TOOL])
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    chatStream
+      .mockImplementationOnce(() => { throw new VllmError(400, '"auto" tool choice requires --enable-auto-tool-choice') })
+      .mockReturnValueOnce(gen([{ type: 'delta', content: 'hi there' }]))
+    const out = await collect(agentStream([{ role: 'user', content: 'hi' }]))
+    expect(out).toEqual([{ type: 'delta', content: 'hi there' }])
+    expect((chatStream.mock.calls[1][1] as { tools?: unknown[] }).tools).toBeUndefined()
+  })
+
+  it('does not retry a 400 raised after output was already streamed', async () => {
+    getMcpTools.mockResolvedValue([WEATHER_TOOL])
+    chatStream.mockReturnValueOnce((async function* () {
+      yield { type: 'delta', content: 'partial' }
+      throw new VllmError(400, 'boom')
+    })())
+    await expect(collect(agentStream([{ role: 'user', content: 'hi' }]))).rejects.toThrow(/vllm/i)
+    expect(chatStream).toHaveBeenCalledTimes(1)
+  })
+
+  it('propagates non-400 vllm errors instead of masking them as a plain answer', async () => {
+    getMcpTools.mockResolvedValue([WEATHER_TOOL])
+    chatStream.mockImplementationOnce(() => { throw new VllmError(503, 'upstream down') })
+    await expect(collect(agentStream([{ role: 'user', content: 'hi' }]))).rejects.toThrow(/503/)
+    expect(chatStream).toHaveBeenCalledTimes(1)
+  })
+
+  it('caps oversized tool results before feeding them back', async () => {
+    getMcpTools.mockResolvedValue([WEATHER_TOOL])
+    callMcpTool.mockResolvedValue('x'.repeat(20_000))
+    chatStream
+      .mockReturnValueOnce(gen([{ type: 'tool_calls', calls: [
+        { id: 'c1', name: 'get_weather', arguments: '{}' }] }]))
+      .mockReturnValueOnce(gen([{ type: 'delta', content: 'ok' }]))
+    await collect(agentStream([{ role: 'user', content: 'x' }]))
+    const fedBack = (chatStream.mock.calls[1][0] as Array<{ content: string }>).at(-1)!.content
+    expect(fedBack.length).toBeLessThan(5000)
+    expect(fedBack).toContain('[truncated 16000 characters]')
   })
 
   it('sends malformed tool arguments as error text, not a crash', async () => {

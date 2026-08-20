@@ -4,6 +4,7 @@ import { requireUser } from '~/lib/auth/middleware'
 import { agentStream } from '~/lib/chat/agent'
 import { coalesceRoles, foldSystem, trimHistory } from '~/lib/chat/history'
 import { NotFoundError, appendMessage, ensureConversation, loadHistory } from '~/lib/chat/service'
+import { VllmError } from '~/lib/chat/vllm'
 
 const bodySchema = z.object({ conversationId: z.uuid(), message: z.string().min(1).max(8000) })
 const CONTEXT_BUDGET = 8192 - 1024 // reserve for completion
@@ -53,8 +54,12 @@ export const Route = createFileRoute('/api/chat')({
             } else {
               await appendMessage(conversationId, 'assistant', content, { interrupted: true })
                 .catch((e) => console.error('persist interrupted row failed', e))
-              safeEnqueue(sse('error', { message: 'inference failed, try again' }))
-              console.error('chat stream error', err)
+              // client gets a code it can be reported with, never the upstream
+              // body (it echoes the prompt payload); the body stays in the log
+              const code = err instanceof VllmError ? `upstream_${err.status}` : 'internal'
+              safeEnqueue(sse('error', { message: 'inference failed, try again', code }))
+              console.error('chat stream error', { code, conversationId,
+                body: err instanceof VllmError ? err.body : undefined, err })
             }
           } finally { try { controller.close() } catch { /* already closed by disconnect */ } }
         },

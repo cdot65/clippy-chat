@@ -1,20 +1,25 @@
-import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+
+// env is mocked rather than driven through process.env because the real env()
+// caches on first call, which makes per-test auth modes impossible. Schema
+// behaviour itself is covered in env.test.ts.
+const { envValue } = vi.hoisted(() => ({
+  envValue: {
+    VLLM_BASE_URL: 'http://vllm:8000',
+    VLLM_MODEL: 'test-model',
+    VLLM_API_KEY: 'test-key' as string | undefined,
+    VLLM_AUTH_MODE: 'direct' as 'direct' | 'gateway',
+  },
+}))
+vi.mock('~/lib/env', () => ({ env: () => envValue }))
+
 import { chatStream } from './vllm'
 
-beforeAll(() => {
-  process.env.DATABASE_URL = 'postgres://clippy:clippy@localhost:5433/clippy'
-  process.env.ADMIN_USERNAME = 'admin-test'
-  process.env.ADMIN_PASSWORD = 'boots'
-  process.env.APP_URL = 'http://localhost:3000'
-  process.env.KC_ISSUER = 'https://auth.example.com/realms/myrealm'
-  process.env.KC_CLIENT_ID = 'x'; process.env.KC_CLIENT_SECRET = 'x'
-  process.env.SESSION_SECRET = 'k'.repeat(44)
-  // env() caches on first call, so set before any chatStream runs; every test
-  // in this file therefore sends the auth header (asserted in dedicated test)
-  process.env.VLLM_API_KEY = 'test-key'
+afterEach(() => {
+  vi.unstubAllGlobals()
+  envValue.VLLM_API_KEY = 'test-key'
+  envValue.VLLM_AUTH_MODE = 'direct'
 })
-
-afterEach(() => vi.unstubAllGlobals())
 
 const sse = (lines: string[]) => new Response(
   new ReadableStream({
@@ -61,6 +66,29 @@ it('sends bearer auth header when VLLM_API_KEY is set', async () => {
   for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {}
   const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
   expect((init.headers as Record<string, string>).authorization).toBe('Bearer test-key')
+})
+
+it('sends the portkey gateway key instead of Authorization in gateway mode', async () => {
+  envValue.VLLM_AUTH_MODE = 'gateway'
+  const fetchMock = vi.fn(async () => sse(['[DONE]']))
+  vi.stubGlobal('fetch', fetchMock)
+  for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {}
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+  const headers = init.headers as Record<string, string>
+  expect(headers['x-portkey-api-key']).toBe('test-key')
+  // AIRS mints its own upstream Authorization; ours would be forwarded or 401
+  expect(headers.authorization).toBeUndefined()
+})
+
+it('omits auth entirely when no key is configured', async () => {
+  envValue.VLLM_API_KEY = undefined
+  const fetchMock = vi.fn(async () => sse(['[DONE]']))
+  vi.stubGlobal('fetch', fetchMock)
+  for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {}
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+  const headers = init.headers as Record<string, string>
+  expect(headers.authorization).toBeUndefined()
+  expect(headers['x-portkey-api-key']).toBeUndefined()
 })
 
 it('throws on non-200', async () => {
