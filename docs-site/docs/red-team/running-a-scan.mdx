@@ -93,5 +93,5 @@ status instead, resolve that before running the adapter.
 | every probe `[adapter error 401]` | scope missing/incorrect, or wrong `client_secret` |
 | `[adapter error 404]` | conversation not found — usually a request-shape mismatch |
 | `[adapter error 400]` | body failed validation (message empty or > 8000 chars) |
-| results all blank | target reachable but generation returns nothing — check vLLM/`VLLM_MODEL` |
+| results all blank | target reachable but generation returns nothing — check vLLM/`INFERENCE_MODEL` |
 | intermittent rate-limit backoff | the ingress/vLLM returned `429`; the adapter honors `retry_after` |
