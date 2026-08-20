@@ -16,7 +16,10 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: transport,
 }))
-vi.mock('~/lib/env', () => ({ env: () => ({ MCP_SERVER_URL: 'http://mcp:8080/mcp' }) }))
+const { envValue } = vi.hoisted(() => ({
+  envValue: { MCP_SERVER_URL: 'http://mcp:8080/mcp', MCP_AUTH_MODE: 'direct' as 'direct' | 'gateway' },
+}))
+vi.mock('~/lib/env', () => ({ env: () => envValue }))
 vi.mock('./mcp-auth', () => ({
   getMcpCredential: vi.fn().mockResolvedValue({ accessToken: 'mcp-jwt', expiresAt: Date.now() + 300_000 }),
 }))
@@ -57,6 +60,20 @@ describe('getMcpTools', () => {
     expect(transport).toHaveBeenCalledWith(new URL('http://mcp:8080/mcp'), {
       requestInit: { headers: { Authorization: 'Bearer mcp-jwt' } },
     })
+  })
+
+  it('sends the AIRS header contract in gateway mode, not bare Authorization', async () => {
+    envValue.MCP_AUTH_MODE = 'gateway'
+    try {
+      listTools.mockResolvedValue({ tools: [] })
+      await getMcpTools()
+      // identity in Authorization alone is a documented 401 at AIRS
+      expect(transport).toHaveBeenCalledWith(new URL('http://mcp:8080/mcp'), {
+        requestInit: { headers: {
+          'x-portkey-api-key': 'mcp-jwt', 'X-Auth-Token': 'Bearer mcp-jwt',
+        } },
+      })
+    } finally { envValue.MCP_AUTH_MODE = 'direct' }
   })
 })
 

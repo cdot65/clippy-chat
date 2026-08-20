@@ -32,7 +32,8 @@ Everything a chat turn touches, from `POST /api/chat` to streamed tokens.
 
 ## Chat-template compatibility normalization
 
-The production model is `qwen36-hauhaucs`. Clippy retains two conservative transforms in
+The production model is `@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL`, served through the AIRS
+gateway. Clippy retains two conservative transforms in
 `src/lib/chat/history.ts` from its earlier Mistral deployment so persisted conversations remain
 portable across strict chat templates:
 

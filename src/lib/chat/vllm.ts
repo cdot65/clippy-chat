@@ -14,6 +14,26 @@ export type StreamEvent =
   | { type: 'tool_calls'; calls: ToolCall[] }
   | { type: 'usage'; promptTokens: number; completionTokens: number }
 
+/** Non-2xx from vLLM, with the status and body kept separate so callers can
+ *  branch on them (see agent.ts's tools fallback) instead of regexing a string. */
+export class VllmError extends Error {
+  constructor(readonly status: number, readonly body: string) {
+    super(`vllm error: ${status} ${body}`)
+    this.name = 'VllmError'
+  }
+}
+
+/** AIRS authenticates the caller with `x-portkey-api-key`; a bare vLLM behind
+ *  `--api-key` wants `Authorization: Bearer`. Sending the wrong one is a 401,
+ *  and sending both risks the gateway forwarding our key upstream, so pick. */
+function inferenceAuthHeaders(): Record<string, string> {
+  const { VLLM_API_KEY, VLLM_AUTH_MODE } = env()
+  if (!VLLM_API_KEY) return {} // dev vLLM may run without a key
+  return VLLM_AUTH_MODE === 'gateway'
+    ? { 'x-portkey-api-key': VLLM_API_KEY }
+    : { authorization: `Bearer ${VLLM_API_KEY}` }
+}
+
 export async function* chatStream(
   messages: VllmMessage[],
   opts: { signal?: AbortSignal; tools?: OpenAiTool[] } = {},
@@ -21,11 +41,7 @@ export async function* chatStream(
   const { signal, tools } = opts
   const res = await fetch(`${env().VLLM_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      // cluster vLLM runs with --api-key; dev vLLM may not — no key, no header
-      ...(env().VLLM_API_KEY ? { authorization: `Bearer ${env().VLLM_API_KEY}` } : {}),
-    },
+    headers: { 'content-type': 'application/json', ...inferenceAuthHeaders() },
     body: JSON.stringify({
       model: env().VLLM_MODEL, messages, stream: true,
       stream_options: { include_usage: true },
@@ -33,7 +49,7 @@ export async function* chatStream(
     }),
     signal,
   })
-  if (!res.ok || !res.body) throw new Error(`vllm error: ${res.status} ${await res.text().catch(() => '')}`)
+  if (!res.ok || !res.body) throw new VllmError(res.status, await res.text().catch(() => ''))
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()

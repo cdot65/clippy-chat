@@ -46,14 +46,20 @@ spec:
               value: "https://auth.dev.cdot.io/realms/truffles"
             - name: KC_CLIENT_ID
               value: "clippy-web"
+            # Inference and MCP both egress through Prisma AIRS. VLLM_API_KEY
+            # (the gateway key) arrives via envFrom secretRef clippy-app.
             - name: VLLM_BASE_URL
-              value: "http://vllm-qwen36.vllm.svc.cluster.local:8000"
+              value: "http://airs-gw.airs-gw.svc.cluster.local:80"
             - name: VLLM_MODEL
-              value: "qwen36-hauhaucs"
+              value: "@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL"
+            - name: VLLM_AUTH_MODE
+              value: "gateway"
             - name: M2M_SCOPE
               value: "clippy-api"
             - name: MCP_SERVER_URL
-              value: "http://clippy-mcp.clippy.svc.cluster.local:8080/mcp"
+              value: "https://mcp-airs.cdot.io/ws-produc-985697/clippy/mcp"
+            - name: MCP_AUTH_MODE
+              value: "gateway"
             - name: MCP_TOKEN_URL
               valueFrom:
                 secretKeyRef:
