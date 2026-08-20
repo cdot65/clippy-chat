@@ -51,7 +51,7 @@ unconstrained.
 | `id` | uuid PK | **client-supplied** (no default) |
 | `user_id` | uuid NOT NULL → `user_profiles.id` | |
 | `title` | text | first 80 chars of the first message |
-| `model` | text NOT NULL | `VLLM_MODEL` at creation |
+| `model` | text NOT NULL | `INFERENCE_MODEL` at creation |
 | `deleted_at` | timestamptz | nullable — **soft delete** |
 | `created_at` / `updated_at` | timestamptz NOT NULL | default `now()` |
 

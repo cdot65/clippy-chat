@@ -46,14 +46,21 @@ spec:
               value: "https://auth.dev.cdot.io/realms/truffles"
             - name: KC_CLIENT_ID
               value: "clippy-web"
-            # Inference and MCP both egress through Prisma AIRS. VLLM_API_KEY
-            # (the gateway key) arrives via envFrom secretRef clippy-app.
-            - name: VLLM_BASE_URL
+            # Inference and MCP both egress through Prisma AIRS. INFERENCE_API_KEY
+            # (the gateway key) is remapped below from clippy-app's VLLM_API_KEY
+            # field — the 1Password item still uses that field name; renaming it
+            # is a separate, out-of-band change (see clippy-chat#27).
+            - name: INFERENCE_BASE_URL
               value: "http://airs-gw.airs-gw.svc.cluster.local:80"
-            - name: VLLM_MODEL
+            - name: INFERENCE_MODEL
               value: "@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL"
-            - name: VLLM_AUTH_MODE
+            - name: INFERENCE_AUTH_MODE
               value: "gateway"
+            - name: INFERENCE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-app
+                  key: VLLM_API_KEY
             - name: M2M_SCOPE
               value: "clippy-api"
             - name: MCP_SERVER_URL

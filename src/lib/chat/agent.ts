@@ -1,6 +1,6 @@
 import type { ChatMessage } from './history'
 import { callMcpTool, getMcpTools } from './mcp'
-import { VllmError, chatStream, type StreamEvent, type VllmMessage } from './vllm'
+import { InferenceError, chatStream, type StreamEvent, type InferenceMessage } from './inference'
 
 export type AgentEvent = StreamEvent | { type: 'tool_use'; name: string }
 
@@ -27,7 +27,7 @@ export async function* agentStream(
   history: ChatMessage[], signal?: AbortSignal,
 ): AsyncGenerator<AgentEvent> {
   let tools = await getMcpTools() // [] ⇒ behaves exactly like plain chatStream
-  const msgs: VllmMessage[] = [...history]
+  const msgs: InferenceMessage[] = [...history]
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     let calls: Array<{ id: string; name: string; arguments: string }> | null = null
     let yielded = false
@@ -47,7 +47,7 @@ export async function* agentStream(
         break
       } catch (err) {
         if (attempt > 0 || !useTools || yielded
-          || !(err instanceof VllmError) || err.status !== 400) throw err
+          || !(err instanceof InferenceError) || err.status !== 400) throw err
         console.error('vllm rejected tools payload, retrying without tools:', err.body)
         tools = []
         calls = null

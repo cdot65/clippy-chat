@@ -43,7 +43,7 @@ to `main` — the commands above are for building locally, not the normal path.
 | **Clippy MCP** | authenticated tool execution with an independent scoped JWT |
 
 All configuration is via [environment variables](/reference/configuration). Provide secrets
-(`SESSION_SECRET`, `KC_CLIENT_SECRET`, `ADMIN_PASSWORD`, and `VLLM_API_KEY` if used) through your
+(`SESSION_SECRET`, `KC_CLIENT_SECRET`, `ADMIN_PASSWORD`, and `INFERENCE_API_KEY` if used) through your
 platform's secret store — never bake them into the image.
 
 ## Kubernetes (illustrative)
@@ -61,7 +61,7 @@ stringData:
   SESSION_SECRET: "REPLACE_ME"     # openssl rand -base64 32
   KC_CLIENT_SECRET: "REPLACE_ME"   # from your IdP web client
   ADMIN_PASSWORD: "REPLACE_ME"
-  # VLLM_API_KEY: "REPLACE_ME"     # only if vLLM runs with --api-key
+  # INFERENCE_API_KEY: "REPLACE_ME"     # only if vLLM runs with --api-key
 ```
 
 ```yaml title="Example — non-secret config via env"
@@ -69,9 +69,9 @@ env:
   - { name: APP_URL,       value: "https://chat.example.com" }
   - { name: KC_ISSUER,     value: "https://auth.example.com/realms/myrealm" }
   - { name: KC_CLIENT_ID,  value: "clippy-web" }
-  - { name: VLLM_BASE_URL,  value: "http://airs-gw.airs-gw.svc.cluster.local:80" }
-  - { name: VLLM_MODEL,     value: "@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL" }
-  - { name: VLLM_AUTH_MODE, value: "gateway" }
+  - { name: INFERENCE_BASE_URL,  value: "http://airs-gw.airs-gw.svc.cluster.local:80" }
+  - { name: INFERENCE_MODEL,     value: "@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL" }
+  - { name: INFERENCE_AUTH_MODE, value: "gateway" }
   - { name: DATABASE_URL,  valueFrom: { secretKeyRef: { name: clippy-postgres, key: url } } }
 ```
 

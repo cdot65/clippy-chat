@@ -41,7 +41,7 @@ MCP tool server.
 - **Browser / machine → API.** Handlers under `src/routes/api/**` resolve identity with
   `resolveUser` / `requireUser` / `requireAdmin` (`src/lib/auth/middleware.ts`), then hit the DB
   or vLLM.
-- **API → vLLM.** Only `POST /api/chat` streams from vLLM (`src/lib/chat/vllm.ts`) via the
+- **API → vLLM.** Only `POST /api/chat` streams from vLLM (`src/lib/chat/inference.ts`) via the
   OpenAI-compatible `/v1/chat/completions` endpoint with `stream: true`, and re-emits the tokens
   to the browser as Server-Sent Events.
 - **API → OIDC provider.** `openid-client` handles auth-code + PKCE for web login

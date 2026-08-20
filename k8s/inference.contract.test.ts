@@ -34,16 +34,16 @@ function envValue(name: string): string | undefined {
 // belongs in a deploy-time smoke check against /v1/models, not in this file.
 describe('production inference contract', () => {
   it('routes inference through the AIRS gateway', () => {
-    expect(envValue('VLLM_BASE_URL')).toBe('http://airs-gw.airs-gw.svc.cluster.local:80')
+    expect(envValue('INFERENCE_BASE_URL')).toBe('http://airs-gw.airs-gw.svc.cluster.local:80')
   })
 
   it('requests the model ID the gateway serves', () => {
-    expect(envValue('VLLM_MODEL')).toBe('@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL')
+    expect(envValue('INFERENCE_MODEL')).toBe('@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL')
   })
 
   it('speaks the gateway header contract on both egress paths', () => {
     // direct-mode headers are a 401 against AIRS — see the Security Handoff
-    expect(envValue('VLLM_AUTH_MODE')).toBe('gateway')
+    expect(envValue('INFERENCE_AUTH_MODE')).toBe('gateway')
     expect(envValue('MCP_AUTH_MODE')).toBe('gateway')
   })
 

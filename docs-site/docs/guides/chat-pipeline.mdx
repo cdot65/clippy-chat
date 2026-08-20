@@ -19,7 +19,7 @@ Everything a chat turn touches, from `POST /api/chat` to streamed tokens.
    **client-supplied**:
    - exists, owned, not deleted → reuse;
    - exists but foreign or deleted → `NotFoundError` → **`404`**;
-   - absent → created in one transaction: the `conversations` row (`model = VLLM_MODEL`,
+   - absent → created in one transaction: the `conversations` row (`model = INFERENCE_MODEL`,
      `title = message.slice(0,80)`) **and** a seed `messages` row (`role: 'system'`, the Clippy
      persona), so a conversation is never observable without its system row. A concurrent create
      on the same id is caught via unique violation → the winner is returned.
@@ -45,7 +45,7 @@ portable across strict chat templates:
   `user` turn (strict alternating-role templates reject a payload that starts with `assistant`).
 
 :::tip Swapping models
-`VLLM_MODEL` sets the model. If you point Clippy at a model without strict alternation rules,
+`INFERENCE_MODEL` sets the model. If you point Clippy at a model without strict alternation rules,
 the folding/trimming is still safe — it just becomes a no-op-ish normalization.
 :::
 
@@ -56,24 +56,24 @@ the folding/trimming is still safe — it just becomes a no-op-ish normalization
 > You are Clippy 📎, a friendly, upbeat AI assistant … Light paperclip humor is welcome; never let
 > it get in the way of a good answer.
 
-## The vLLM call
+## The inference call
 
-`chatStream` (`src/lib/chat/vllm.ts`) does `POST ${VLLM_BASE_URL}/v1/chat/completions` with:
+`chatStream` (`src/lib/chat/inference.ts`) does `POST ${INFERENCE_BASE_URL}/v1/chat/completions` with:
 
 ```json
 {
-  "model": "<VLLM_MODEL>",
+  "model": "<INFERENCE_MODEL>",
   "messages": [ ... ],
   "stream": true,
   "stream_options": { "include_usage": true }
 }
 ```
 
-- Adds `Authorization: Bearer ${VLLM_API_KEY}` **only if `VLLM_API_KEY` is set** (cluster vLLM runs
-  with `--api-key`; a dev vLLM may not).
+- Adds `Authorization: Bearer ${INFERENCE_API_KEY}` **only if `INFERENCE_API_KEY` is set** (cluster
+  vLLM runs with `--api-key`; a dev vLLM may not).
 - Parses the upstream SSE stream, yielding `{type:'delta', content}` and
   `{type:'usage', promptTokens, completionTokens}`. A non-2xx (or missing body) throws
-  `vllm error: <status> <text>`. The reader is always cancelled in `finally`.
+  `inference error: <status> <text>`. The reader is always cancelled in `finally`.
 
 ## The SSE contract (app → client)
 
