@@ -7,7 +7,7 @@ sidebar_position: 4
 
 # `clippy_redteam_mcp.py` — attacking the MCP tool server
 
-The full adapter lives at [`redteam/clippy_redteam_mcp.py`](https://github.com/cdot65/clippy-chat/blob/main/redteam/clippy_redteam_mcp.py).
+The full adapter lives at [`redteam/clippy_redteam_mcp.py`](https://git.cdot.io/cdot.io/clippy-chat/src/branch/main/redteam/clippy_redteam_mcp.py).
 Unlike the [chat adapter](/red-team/adapter), which drives the model through `/api/chat`, this
 one targets the **`clippy-mcp` server directly** — the in-cluster [Model Context Protocol](https://modelcontextprotocol.io)
 server that exposes Clippy's tools (`get_weather`, `web_search`, `get_daily_news`,
@@ -47,6 +47,11 @@ polymarket/datetime) are safe to fuzz freely.
 Configure the adapter's platform OAuth2 authentication with the
 `clippy-mcp-client` client-credentials grant. The platform injects the resulting
 token through `context.auth`; the adapter forwards it as a bearer token.
+
+This is the **direct in-cluster route**. External clients must use the AIRS URL and two-stage
+headers (`x-portkey-api-key` plus `X-Auth-Token: Bearer ...`); AIRS then forwards the identity as
+the upstream `Authorization` bearer. See [AI Gateway MCP security](/security/overview). Do not
+configure the external adapter to send its identity JWT only as client-facing `Authorization`.
 
 ```text
 endpoint    (required)  http://clippy-mcp.clippy.svc.cluster.local:8080/mcp

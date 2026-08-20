@@ -1,0 +1,139 @@
+---
+id: overview
+title: AI Gateway and MCP security handoff
+sidebar_label: Security handoff
+description: Production authentication and authorization contract for Clippy through the Portkey AI Gateway.
+---
+
+# AI Gateway and MCP security handoff
+
+This is the review entry point for the AI Security team. It documents the production contract
+between Truffles Keycloak, Portkey AI Gateway (AIRS), the Clippy MCP registration, and the
+independent authorization check inside `clippy-mcp`.
+
+Production was verified on **2026-08-19**. Start with the [architecture](./architecture), execute
+the [E2E test plan](./e2e-testing), compare with the [production evidence](./production-evidence),
+then use the [operations runbook](./operations).
+
+:::info Repository authority
+The canonical repository, issues, pull requests, CI, and container builds are in
+[Forgejo](https://git.cdot.io/cdot.io/clippy-chat). GitHub is a read-only push mirror used to
+publish this Docusaurus site.
+:::
+
+## Decision summary
+
+Clippy supports the customer-requested OAuth model: a customer IdP mints an identity JWT with
+permission to invoke one MCP server; AIRS validates it; AIRS forwards it as a bearer identity;
+the destination MCP server independently verifies it.
+
+The production permission is **`mcp.invoke`**. This value is our policy, not a universal Portkey
+scope. A customer may use another value if the IdP, AIRS `jwt_validation.claimValues`, and MCP
+server authorization policy all agree.
+
+## Two authentication modes
+
+| Mode | Gateway credential | Per-server identity | Result |
+| --- | --- | --- | --- |
+| Org-level JWKS | Org-claim JWT in `x-portkey-api-key` | Same or separate JWT in `X-Auth-Token` | Replaces a Portkey API key when JWT carries Portkey org/workspace claims |
+| JWT Validator Guardrail | Workspace/gateway security key in `x-portkey-api-key` | IdP JWT in `X-Auth-Token` | Gateway authentication happens first; server-specific validation happens second |
+
+The required production header shape is:
+
+```http
+x-portkey-api-key: <gateway credential>
+X-Auth-Token: Bearer <external identity JWT>
+```
+
+For the production Org-level JWKS path, the Clippy JWT carries the organization and workspace
+claims, so the same JWT can fill both logical roles:
+
+```http
+x-portkey-api-key: <Clippy org-claim JWT>
+X-Auth-Token: Bearer <same Clippy JWT>
+```
+
+For a workspace key plus JWT Validator Guardrail, the values are different:
+
+```http
+x-portkey-api-key: <gateway security key>
+X-Auth-Token: Bearer <Clippy identity JWT>
+```
+
+Do **not** put the external identity JWT in the client-facing `Authorization` header for this
+registration. `X-Auth-Token` avoids collision with gateway authentication. After validation,
+AIRS identity forwarding creates `Authorization: Bearer <JWT>` on the upstream request to
+`clippy-mcp`.
+
+Portkey documents the two-stage model in
+[Bring Your Own Auth](https://portkey.ai/docs/product/mcp-gateway/authentication/external-oauth)
+and the custom bearer header in
+[JWT Validation](https://portkey.ai/docs/product/mcp-gateway/authentication/jwt#custom-token-header).
+
+## Production policy
+
+| Control | Clippy value | Enforcement |
+| --- | --- | --- |
+| Algorithm | `RS256` | AIRS and `clippy-mcp` |
+| Issuer | `https://auth.dev.cdot.io/realms/truffles` | Exact |
+| JWKS | `https://auth.dev.cdot.io/realms/truffles/protocol/openid-connect/certs` | Org and per-server validation |
+| Audience | Contains `clippy` | AIRS and `clippy-mcp` |
+| Authorized party | Exactly `clippy-mcp-client` | AIRS and `clippy-mcp` |
+| Scope | Contains `mcp.invoke` | AIRS and `clippy-mcp` |
+| Workspace | Exactly `ws-produc-985697` | AIRS and `clippy-mcp` |
+| Required claims | `sub`, `aud`, `azp`, `scope`, `portkey_workspace` | AIRS; server also requires `exp`, `iat` |
+
+The Keycloak token also carries `portkey_oid`, allowing the JWT to authenticate to the gateway
+without a separate workspace API key.
+
+## Authorization boundaries
+
+- AIRS rejects missing gateway credentials before JWT validation.
+- The Clippy registration accepts only the Clippy audience, client, scope, and workspace.
+- The Agent Gateway registration accepts only audience `agent-gateway` and an `azp` matching
+  `^ag-[0-9a-f]{32}$`, with the same scope/workspace/issuer.
+- An inference token has `completions.write`; it cannot call either MCP server.
+- A Clippy token cannot call Agent Gateway, and an Agent Gateway token cannot call Clippy.
+- `clippy-mcp` verifies the forwarded bearer independently. A gateway misconfiguration therefore
+  fails closed at the server.
+- The direct in-cluster adapter route remains supported, but it bypasses AIRS and must supply a
+  valid Clippy bearer directly. See [MCP Tool Adapter](/red-team/mcp-adapter).
+
+## Auth0 and other customer IdPs
+
+Auth0, Okta, and other IdPs are supported by the mechanism, but are not automatically trusted.
+For each issuer, configure:
+
+1. a public JWKS URI and allowed signature algorithms;
+2. exact issuer validation;
+3. an audience representing the target MCP server;
+4. a permission/scope claim such as `mcp.invoke`;
+5. workspace and tenant claims needed for gateway routing;
+6. claim-value checks in AIRS;
+7. the same checks in the destination MCP server when end-to-end authorization is required.
+
+Current production evidence covers **Truffles Keycloak only**. A customer Auth0 rollout needs its
+own registration, token projection tests, positive request, isolated negative-claim tests, and
+post-restart proof before approval.
+
+## Known approval blocker
+
+Authentication/authorization behavior passes production tests, but secret ownership does not yet
+match the approved boundary: the current manifest projects `clippy-mcp-client` from the Truffles
+vault; design requires **AI Security Academy - Runtime** only. See
+[Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22). This blocks final
+secret-boundary approval, not independent execution of the non-mutating E2E probes.
+
+## Review acceptance criteria
+
+- Positive token initializes Clippy, lists the exact tool set, and calls a safe tool.
+- Missing, malformed, wrong-audience, wrong-scope, wrong-workspace, and cross-server identities
+  fail closed.
+- Gateway and identity credentials can be distinct.
+- Token values never appear in argv, logs, evidence files, or documentation.
+- Tool parity survives AIRS and MCP workload restart.
+- Source clients remain disabled only after destination-client configuration parity and token
+  expiry are proven.
+- `clippy-mcp-client` is migrated to AI Security Academy - Runtime and issue #22 is closed.
+
+See [Production evidence](./production-evidence) for the recorded results.

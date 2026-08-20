@@ -110,3 +110,13 @@ This is exactly the flow the **[Red-Team Adapter](/red-team/overview)** automate
 `refreshTokens` / `updateSessionTokens` exist and the callback stores the encrypted refresh token,
 but no route currently calls refresh — stored provider tokens are unused after login.
 :::
+
+## MCP authorization is a separate token contract
+
+The chat API's `clippy-api` bearer path above does not authorize an MCP request. Clippy MCP uses
+the `clippy-mcp-client` confidential client, audience `clippy`, scope `mcp.invoke`, and workspace
+`ws-produc-985697`. External requests also pass AIRS gateway authentication and per-registration
+JWT validation before the bearer reaches `clippy-mcp`.
+
+See **[AI Gateway and MCP security handoff](/security/overview)** for exact headers, claims,
+customer Auth0 guidance, architecture, requests/responses, and the production test matrix.

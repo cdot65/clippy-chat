@@ -17,6 +17,8 @@ red-team target. Sibling adapters: [`clippy_redteam_debug_oauth2.py`](redteam/cl
 - [Red-Team Adapter](https://cdot65.github.io/clippy-chat/red-team/overview) — the centerpiece
 - [Getting Started](https://cdot65.github.io/clippy-chat/getting-started)
 - [Architecture](https://cdot65.github.io/clippy-chat/architecture)
+- [AI Gateway & MCP Security](https://cdot65.github.io/clippy-chat/security/overview) — OAuth
+  headers, claim policy, diagrams, E2E tests, and sanitized production evidence
 - [HTTP API Reference](https://cdot65.github.io/clippy-chat/reference/api)
 
 ## Quick start
@@ -42,5 +44,5 @@ Source of truth is `git.cdot.io/cdot.io/clippy-chat` (Forgejo); GitHub stays a l
 mirror at `cdot65/clippy-chat`. Images build in Forgejo Actions and push to
 `registry.cdot.io/clippy/`.
 
-> Every hostname, realm, and credential in this repo is a placeholder
-> (`chat.example.com`, `auth.example.com`, realm `myrealm`, `changeme`). Supply your own.
+> General examples use placeholders. Security handoff docs intentionally name non-secret
+> production endpoints/policy for reproducible review; all credentials remain redacted.

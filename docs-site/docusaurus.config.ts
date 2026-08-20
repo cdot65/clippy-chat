@@ -1,5 +1,6 @@
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import type {PrismTheme} from 'prism-react-renderer';
 // Gruvbox dark (hard contrast) syntax theme — see src/css/prism-gruvbox.js
 import gruvboxTheme from './src/css/prism-gruvbox.js';
 
@@ -24,10 +25,13 @@ const config: Config = {
   onBrokenLinks: 'throw',
 
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: 'throw',
     },
   },
+
+  themes: ['@docusaurus/theme-mermaid'],
 
   i18n: {
     defaultLocale: 'en',
@@ -41,7 +45,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/', // docs are the site root
-          editUrl: 'https://github.com/cdot65/clippy-chat/tree/main/docs-site/',
+          editUrl: 'https://git.cdot.io/cdot.io/clippy-chat/src/branch/main/docs-site/',
         },
         blog: false,
         theme: {
@@ -78,8 +82,8 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://github.com/cdot65/clippy-chat',
-          label: 'GitHub',
+          href: 'https://git.cdot.io/cdot.io/clippy-chat',
+          label: 'Forgejo',
           position: 'right',
         },
       ],
@@ -106,15 +110,15 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            {label: 'GitHub', href: 'https://github.com/cdot65/clippy-chat'},
+            {label: 'Forgejo', href: 'https://git.cdot.io/cdot.io/clippy-chat'},
           ],
         },
       ],
       copyright: `Clippy Chat — built as a Palo Alto AI Red Teaming adapter example.`,
     },
     prism: {
-      theme: gruvboxTheme,
-      darkTheme: gruvboxTheme,
+      theme: gruvboxTheme as PrismTheme,
+      darkTheme: gruvboxTheme as PrismTheme,
       additionalLanguages: ['bash', 'json', 'diff', 'python', 'typescript', 'sql'],
     },
   } satisfies Preset.ThemeConfig,

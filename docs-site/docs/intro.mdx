@@ -33,6 +33,7 @@ section. Everything else documents the target it drives.
 | **Streaming inference** | vLLM chat completions relayed to the browser as Server-Sent Events. |
 | **Persistence** | Postgres 17 via [Drizzle ORM](https://orm.drizzle.team/); every conversation and message is logged. |
 | **Admin panel** | A conversation-log table with a per-conversation transcript flyout. |
+| **Secured MCP tools** | Cluster-internal MCP plus an AIRS route with two-stage gateway/identity authentication and destination enforcement. |
 
 ## Architecture at a glance
 
@@ -44,6 +45,7 @@ section. Everything else documents the target it drives.
                   ▼
         clippy-chat  (TanStack Start, Node 22)
            ├──► vLLM        (chat completions, stream: true)
+           ├──► clippy-mcp  (scoped machine JWT)
            └──► Postgres    (conversations + messages)
 ```
 
@@ -58,8 +60,10 @@ API scope. The red-team adapter uses exactly that machine path.
 - **[Red-Team Adapter → Running a Scan](/red-team/running-a-scan)** — configure vars/secrets and drive it.
 - **[Getting Started](/getting-started)** — run the whole app locally.
 - **[Architecture](/architecture)** — the full request flow and stack.
+- **[AI Gateway & MCP Security](/security/overview)** — production OAuth headers, claims,
+  architecture, E2E tests, and evidence for AI Security review.
 
-:::note Example configuration only
-Every hostname, realm, and credential in these docs is a **placeholder** (`chat.example.com`,
-`auth.example.com`, realm `myrealm`, `changeme`). Nothing here is a live endpoint or secret.
+:::note Examples and production evidence
+General setup pages use placeholders. The security handoff names real production endpoints and
+non-secret policy values so reviewers can reproduce tests; every credential remains redacted.
 :::
