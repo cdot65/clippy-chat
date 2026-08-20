@@ -10,10 +10,10 @@ SECRET_MANIFEST = ROOT / "k8s" / "15-secrets.yaml"
 # MCP server, so its published digest is unchanged. They are separate services
 # and are allowed to sit on different commits; each is still pinned by tag AND
 # digest, which is the property this file exists to enforce.
-APP_SHA = "b32fcfbb209d35b625ab6aea290d8811137f31ce"
+APP_SHA = "f1036da66d7b84a4e55813e3da3e73c3f6f4e3ee"
 APP_IMAGE = (
     f"registry.cdot.io/clippy/clippy-chat:sha-{APP_SHA}"
-    "@sha256:f04d9731f75ecffe173ba3a0d72145e41cf7de794b68dbb6d65a29fb9ee16357"
+    "@sha256:25139aae0c087744504bab2c06683f1f2bca8e43432877c20800fbae65d45de5"
 )
 MCP_SHA = "fe3b2a2ba0135ddb4880c3021c957420aa19664a"
 MCP_IMAGE = (
