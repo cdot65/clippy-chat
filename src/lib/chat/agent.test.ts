@@ -6,12 +6,12 @@ vi.mock('./mcp', () => ({ getMcpTools: (...a: unknown[]) => getMcpTools(...a),
   callMcpTool: (...a: unknown[]) => callMcpTool(...a) }))
 const chatStream = vi.fn()
 // hoisted with the vi.mock factory — a plain class decl would be in the TDZ there
-const { VllmError } = vi.hoisted(() => ({
-  VllmError: class VllmError extends Error {
-    constructor(readonly status: number, readonly body: string) { super(`vllm error: ${status} ${body}`) }
+const { InferenceError } = vi.hoisted(() => ({
+  InferenceError: class InferenceError extends Error {
+    constructor(readonly status: number, readonly body: string) { super(`inference error: ${status} ${body}`) }
   },
 }))
-vi.mock('./vllm', () => ({ chatStream: (...a: unknown[]) => chatStream(...a), VllmError }))
+vi.mock('./inference', () => ({ chatStream: (...a: unknown[]) => chatStream(...a), InferenceError }))
 
 import { agentStream } from './agent'
 
@@ -62,7 +62,7 @@ describe('agentStream', () => {
     getMcpTools.mockResolvedValue([WEATHER_TOOL])
     vi.spyOn(console, 'error').mockImplementation(() => {})
     chatStream
-      .mockImplementationOnce(() => { throw new VllmError(400, '"auto" tool choice requires --enable-auto-tool-choice') })
+      .mockImplementationOnce(() => { throw new InferenceError(400, '"auto" tool choice requires --enable-auto-tool-choice') })
       .mockReturnValueOnce(gen([{ type: 'delta', content: 'hi there' }]))
     const out = await collect(agentStream([{ role: 'user', content: 'hi' }]))
     expect(out).toEqual([{ type: 'delta', content: 'hi there' }])
@@ -73,15 +73,15 @@ describe('agentStream', () => {
     getMcpTools.mockResolvedValue([WEATHER_TOOL])
     chatStream.mockReturnValueOnce((async function* () {
       yield { type: 'delta', content: 'partial' }
-      throw new VllmError(400, 'boom')
+      throw new InferenceError(400, 'boom')
     })())
-    await expect(collect(agentStream([{ role: 'user', content: 'hi' }]))).rejects.toThrow(/vllm/i)
+    await expect(collect(agentStream([{ role: 'user', content: 'hi' }]))).rejects.toThrow(/inference/i)
     expect(chatStream).toHaveBeenCalledTimes(1)
   })
 
-  it('propagates non-400 vllm errors instead of masking them as a plain answer', async () => {
+  it('propagates non-400 inference errors instead of masking them as a plain answer', async () => {
     getMcpTools.mockResolvedValue([WEATHER_TOOL])
-    chatStream.mockImplementationOnce(() => { throw new VllmError(503, 'upstream down') })
+    chatStream.mockImplementationOnce(() => { throw new InferenceError(503, 'upstream down') })
     await expect(collect(agentStream([{ role: 'user', content: 'hi' }]))).rejects.toThrow(/503/)
     expect(chatStream).toHaveBeenCalledTimes(1)
   })

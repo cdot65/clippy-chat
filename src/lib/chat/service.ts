@@ -22,7 +22,7 @@ export async function ensureConversation(id: string, userId: string, firstMessag
     // one transaction: a convo without its persona row must never be observable
     return await db().transaction(async (tx) => {
       const [row] = await tx.insert(conversations)
-        .values({ id, userId, model: env().VLLM_MODEL, title: firstMessage.slice(0, 80) }).returning()
+        .values({ id, userId, model: env().INFERENCE_MODEL, title: firstMessage.slice(0, 80) }).returning()
       await tx.insert(messages).values({ conversationId: id, role: 'system', content: CLIPPY_SYSTEM_PROMPT })
       return row
     })

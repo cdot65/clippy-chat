@@ -5,20 +5,20 @@ import { afterEach, expect, it, vi } from 'vitest'
 // behaviour itself is covered in env.test.ts.
 const { envValue } = vi.hoisted(() => ({
   envValue: {
-    VLLM_BASE_URL: 'http://vllm:8000',
-    VLLM_MODEL: 'test-model',
-    VLLM_API_KEY: 'test-key' as string | undefined,
-    VLLM_AUTH_MODE: 'direct' as 'direct' | 'gateway',
+    INFERENCE_BASE_URL: 'http://vllm:8000',
+    INFERENCE_MODEL: 'test-model',
+    INFERENCE_API_KEY: 'test-key' as string | undefined,
+    INFERENCE_AUTH_MODE: 'direct' as 'direct' | 'gateway',
   },
 }))
 vi.mock('~/lib/env', () => ({ env: () => envValue }))
 
-import { chatStream } from './vllm'
+import { chatStream } from './inference'
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  envValue.VLLM_API_KEY = 'test-key'
-  envValue.VLLM_AUTH_MODE = 'direct'
+  envValue.INFERENCE_API_KEY = 'test-key'
+  envValue.INFERENCE_AUTH_MODE = 'direct'
 })
 
 const sse = (lines: string[]) => new Response(
@@ -60,7 +60,7 @@ it('yields deltas then usage', async () => {
   ])
 })
 
-it('sends bearer auth header when VLLM_API_KEY is set', async () => {
+it('sends bearer auth header when INFERENCE_API_KEY is set', async () => {
   const fetchMock = vi.fn(async () => sse(['[DONE]']))
   vi.stubGlobal('fetch', fetchMock)
   for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {}
@@ -69,7 +69,7 @@ it('sends bearer auth header when VLLM_API_KEY is set', async () => {
 })
 
 it('sends the portkey gateway key instead of Authorization in gateway mode', async () => {
-  envValue.VLLM_AUTH_MODE = 'gateway'
+  envValue.INFERENCE_AUTH_MODE = 'gateway'
   const fetchMock = vi.fn(async () => sse(['[DONE]']))
   vi.stubGlobal('fetch', fetchMock)
   for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {}
@@ -81,7 +81,7 @@ it('sends the portkey gateway key instead of Authorization in gateway mode', asy
 })
 
 it('omits auth entirely when no key is configured', async () => {
-  envValue.VLLM_API_KEY = undefined
+  envValue.INFERENCE_API_KEY = undefined
   const fetchMock = vi.fn(async () => sse(['[DONE]']))
   vi.stubGlobal('fetch', fetchMock)
   for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {}
@@ -94,7 +94,7 @@ it('omits auth entirely when no key is configured', async () => {
 it('throws on non-200', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('boom', { status: 500 })))
   await expect(async () => { for await (const _ of chatStream([{ role: 'user', content: 'hi' }])) {} })
-    .rejects.toThrow(/vllm/i)
+    .rejects.toThrow(/inference/i)
 })
 
 it('parses a frame fragmented across chunks', async () => {

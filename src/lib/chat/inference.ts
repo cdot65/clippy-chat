@@ -3,7 +3,7 @@ import type { ChatMessage } from './history'
 import type { OpenAiTool } from './mcp'
 
 export type ToolCall = { id: string; name: string; arguments: string }
-export type VllmMessage =
+export type InferenceMessage =
   | ChatMessage
   | { role: 'assistant'; content: string
       tool_calls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }
@@ -14,12 +14,13 @@ export type StreamEvent =
   | { type: 'tool_calls'; calls: ToolCall[] }
   | { type: 'usage'; promptTokens: number; completionTokens: number }
 
-/** Non-2xx from vLLM, with the status and body kept separate so callers can
- *  branch on them (see agent.ts's tools fallback) instead of regexing a string. */
-export class VllmError extends Error {
+/** Non-2xx from the inference endpoint, with the status and body kept separate
+ *  so callers can branch on them (see agent.ts's tools fallback) instead of
+ *  regexing a string. */
+export class InferenceError extends Error {
   constructor(readonly status: number, readonly body: string) {
-    super(`vllm error: ${status} ${body}`)
-    this.name = 'VllmError'
+    super(`inference error: ${status} ${body}`)
+    this.name = 'InferenceError'
   }
 }
 
@@ -27,29 +28,29 @@ export class VllmError extends Error {
  *  `--api-key` wants `Authorization: Bearer`. Sending the wrong one is a 401,
  *  and sending both risks the gateway forwarding our key upstream, so pick. */
 function inferenceAuthHeaders(): Record<string, string> {
-  const { VLLM_API_KEY, VLLM_AUTH_MODE } = env()
-  if (!VLLM_API_KEY) return {} // dev vLLM may run without a key
-  return VLLM_AUTH_MODE === 'gateway'
-    ? { 'x-portkey-api-key': VLLM_API_KEY }
-    : { authorization: `Bearer ${VLLM_API_KEY}` }
+  const { INFERENCE_API_KEY, INFERENCE_AUTH_MODE } = env()
+  if (!INFERENCE_API_KEY) return {} // dev vLLM may run without a key
+  return INFERENCE_AUTH_MODE === 'gateway'
+    ? { 'x-portkey-api-key': INFERENCE_API_KEY }
+    : { authorization: `Bearer ${INFERENCE_API_KEY}` }
 }
 
 export async function* chatStream(
-  messages: VllmMessage[],
+  messages: InferenceMessage[],
   opts: { signal?: AbortSignal; tools?: OpenAiTool[] } = {},
 ): AsyncGenerator<StreamEvent> {
   const { signal, tools } = opts
-  const res = await fetch(`${env().VLLM_BASE_URL}/v1/chat/completions`, {
+  const res = await fetch(`${env().INFERENCE_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...inferenceAuthHeaders() },
     body: JSON.stringify({
-      model: env().VLLM_MODEL, messages, stream: true,
+      model: env().INFERENCE_MODEL, messages, stream: true,
       stream_options: { include_usage: true },
       ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
     }),
     signal,
   })
-  if (!res.ok || !res.body) throw new VllmError(res.status, await res.text().catch(() => ''))
+  if (!res.ok || !res.body) throw new InferenceError(res.status, await res.text().catch(() => ''))
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
