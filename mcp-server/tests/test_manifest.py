@@ -5,13 +5,19 @@ APP_MANIFEST = ROOT / "k8s" / "20-app.yaml"
 MCP_MANIFEST = ROOT / "k8s" / "60-mcp.yaml"
 SECRET_MANIFEST = ROOT / "k8s" / "15-secrets.yaml"
 
-CODE_SHA = "fe3b2a2ba0135ddb4880c3021c957420aa19664a"
+# The two images were pinned to one shared commit until the AIRS gateway
+# cutover, which rolled only clippy-chat — nothing in that change touched the
+# MCP server, so its published digest is unchanged. They are separate services
+# and are allowed to sit on different commits; each is still pinned by tag AND
+# digest, which is the property this file exists to enforce.
+APP_SHA = "b32fcfbb209d35b625ab6aea290d8811137f31ce"
 APP_IMAGE = (
-    f"registry.cdot.io/clippy/clippy-chat:sha-{CODE_SHA}"
-    "@sha256:3b9104b409652463bc302409837cf9be4f61a74a0c7eb5e75c9f4544f31f0288"
+    f"registry.cdot.io/clippy/clippy-chat:sha-{APP_SHA}"
+    "@sha256:f04d9731f75ecffe173ba3a0d72145e41cf7de794b68dbb6d65a29fb9ee16357"
 )
+MCP_SHA = "fe3b2a2ba0135ddb4880c3021c957420aa19664a"
 MCP_IMAGE = (
-    f"registry.cdot.io/clippy/clippy-mcp:sha-{CODE_SHA}"
+    f"registry.cdot.io/clippy/clippy-mcp:sha-{MCP_SHA}"
     "@sha256:4b57c11d5f910e6f25ae53a860f235706e7c480ebd9d7c77b11cfc5949cccc08"
 )
 
