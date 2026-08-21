@@ -77,4 +77,25 @@ describe('hasInferenceClientCredentials', () => {
     envValue.INFERENCE_CLIENT_SECRET = undefined
     expect(hasInferenceClientCredentials()).toBe(false)
   })
+
+  it('warns once on a partial triple instead of failing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    envValue.INFERENCE_CLIENT_SECRET = undefined
+
+    expect(hasInferenceClientCredentials()).toBe(false)
+    expect(hasInferenceClientCredentials()).toBe(false)
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toMatch(/partially configured/)
+  })
+
+  it('stays silent when nothing is configured', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    envValue.INFERENCE_TOKEN_URL = undefined
+    envValue.INFERENCE_CLIENT_ID = undefined
+    envValue.INFERENCE_CLIENT_SECRET = undefined
+
+    expect(hasInferenceClientCredentials()).toBe(false)
+    expect(warn).not.toHaveBeenCalled()
+  })
 })

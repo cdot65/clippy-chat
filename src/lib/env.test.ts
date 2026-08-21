@@ -39,10 +39,17 @@ describe('parseEnv', () => {
       .toBe('clippy-inference-client')
   })
 
-  it('rejects a half-configured inference client rather than silently falling back', () => {
+  // the 1Password item projects field-by-field, so a missing field reaches the
+  // pod as a partial triple. env() is shared: throwing here 500s every route.
+  it('tolerates a half-configured inference client so the app stays up', () => {
     const { INFERENCE_CLIENT_SECRET: _omitted, ...partial } = inferenceClient
     expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', INFERENCE_API_KEY: 'k', ...partial }))
-      .toThrow(/must be set together/)
+      .not.toThrow()
+  })
+
+  it('still rejects gateway mode when a partial client is the only credential', () => {
+    const { INFERENCE_CLIENT_SECRET: _omitted, ...partial } = inferenceClient
+    expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', ...partial })).toThrow()
   })
   it('rejects an unknown auth mode rather than silently falling back', () => {
     expect(() => parseEnv({ ...base, MCP_AUTH_MODE: 'airs' })).toThrow()

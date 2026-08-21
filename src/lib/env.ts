@@ -36,9 +36,11 @@ const schema = z.object({
   // Requiring the client triple outright would take the whole app down — env()
   // is lazy and shared, so a parse failure 500s every route, not just chat —
   // during any window where the code ships before the Keycloak client exists.
+  // A PARTIAL client triple is deliberately not an error. The Secret is
+  // projected field-by-field from a 1Password item, so a half-populated item
+  // reaches the pod as two of three vars; failing the schema there would 500
+  // every route instead of falling back. inference-auth warns and falls back.
   const inferenceClient = [value.INFERENCE_TOKEN_URL, value.INFERENCE_CLIENT_ID, value.INFERENCE_CLIENT_SECRET]
-  if (inferenceClient.some(Boolean) && !inferenceClient.every(Boolean))
-    context.addIssue({ code: 'custom', path: ['INFERENCE_CLIENT_ID'], message: 'INFERENCE_TOKEN_URL, INFERENCE_CLIENT_ID and INFERENCE_CLIENT_SECRET must be set together' })
   if (value.INFERENCE_AUTH_MODE === 'gateway' && !value.INFERENCE_API_KEY && !inferenceClient.every(Boolean))
     context.addIssue({ code: 'custom', path: ['INFERENCE_CLIENT_ID'], message: 'INFERENCE_AUTH_MODE=gateway requires the INFERENCE_CLIENT_* Keycloak client (or a legacy INFERENCE_API_KEY)' })
   if (!value.MCP_SERVER_URL) return
