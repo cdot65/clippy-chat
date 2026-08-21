@@ -41,7 +41,12 @@ APP_URL=http://localhost:3000
 INFERENCE_BASE_URL=http://<vllm-host>:8000
 INFERENCE_MODEL=@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL
 # INFERENCE_AUTH_MODE=gateway    # against AIRS; omit for a direct vLLM
-# INFERENCE_API_KEY=...          # required in gateway mode; direct only if vLLM runs with --api-key
+# INFERENCE_API_KEY=...          # direct mode only if vLLM runs with --api-key
+# Gateway mode credential: a Keycloak client_credentials identity scoped
+# completions.write. Falls back to INFERENCE_API_KEY when unset.
+# INFERENCE_TOKEN_URL=https://auth.example.com/realms/myrealm/protocol/openid-connect/token
+# INFERENCE_CLIENT_ID=clippy-inference-client
+# INFERENCE_CLIENT_SECRET=...
 KC_ISSUER=https://auth.example.com/realms/myrealm
 KC_CLIENT_ID=clippy-web
 KC_CLIENT_SECRET=changeme

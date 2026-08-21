@@ -61,6 +61,28 @@ spec:
                 secretKeyRef:
                   name: clippy-app
                   key: VLLM_API_KEY
+            # Keycloak identity for gateway inference (scope completions.write).
+            # optional:true on purpose — the app falls back to INFERENCE_API_KEY
+            # while the 1Password item is incomplete; a hard ref would put the
+            # pods in CreateContainerConfigError instead.
+            - name: INFERENCE_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-inference-client
+                  key: INFERENCE_TOKEN_URL
+                  optional: true
+            - name: INFERENCE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-inference-client
+                  key: INFERENCE_CLIENT_ID
+                  optional: true
+            - name: INFERENCE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: clippy-inference-client
+                  key: INFERENCE_CLIENT_SECRET
+                  optional: true
             - name: M2M_SCOPE
               value: "clippy-api"
             - name: MCP_SERVER_URL

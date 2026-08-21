@@ -22,10 +22,34 @@ describe('parseEnv', () => {
     expect(env.INFERENCE_AUTH_MODE).toBe('direct')
     expect(env.MCP_AUTH_MODE).toBe('direct')
   })
-  it('rejects gateway inference without a gateway key', () => {
+  it('rejects gateway inference without a gateway credential', () => {
     expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway' })).toThrow(/INFERENCE_API_KEY/)
     expect(parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', INFERENCE_API_KEY: 'k' }).INFERENCE_AUTH_MODE)
       .toBe('gateway')
+  })
+
+  const inferenceClient = {
+    INFERENCE_TOKEN_URL: 'https://auth.example.com/token',
+    INFERENCE_CLIENT_ID: 'clippy-inference-client',
+    INFERENCE_CLIENT_SECRET: 'secret',
+  }
+
+  it('accepts the Keycloak client as the gateway credential without a static key', () => {
+    expect(parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', ...inferenceClient }).INFERENCE_CLIENT_ID)
+      .toBe('clippy-inference-client')
+  })
+
+  // the 1Password item projects field-by-field, so a missing field reaches the
+  // pod as a partial triple. env() is shared: throwing here 500s every route.
+  it('tolerates a half-configured inference client so the app stays up', () => {
+    const { INFERENCE_CLIENT_SECRET: _omitted, ...partial } = inferenceClient
+    expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', INFERENCE_API_KEY: 'k', ...partial }))
+      .not.toThrow()
+  })
+
+  it('still rejects gateway mode when a partial client is the only credential', () => {
+    const { INFERENCE_CLIENT_SECRET: _omitted, ...partial } = inferenceClient
+    expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', ...partial })).toThrow()
   })
   it('rejects an unknown auth mode rather than silently falling back', () => {
     expect(() => parseEnv({ ...base, MCP_AUTH_MODE: 'airs' })).toThrow()
