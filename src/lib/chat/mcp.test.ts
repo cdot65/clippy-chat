@@ -47,11 +47,13 @@ describe('getMcpTools', () => {
     connect.mockRejectedValue(new Error('ECONNREFUSED'))
     expect(await getMcpTools()).toEqual([])
   })
+  // listTools carries a larger budget than connect: the cold gateway path
+  // measured 10.6s in production, which a 10s bound turned into a lost turn
   it('bounds connect and listTools with timeouts (hung server must not hang chat)', async () => {
     listTools.mockResolvedValue({ tools: [] })
     await getMcpTools()
     expect(connect.mock.calls[0][1]).toEqual({ timeout: 10_000 })
-    expect(listTools.mock.calls[0][1]).toEqual({ timeout: 10_000 })
+    expect(listTools.mock.calls[0][1]).toEqual({ timeout: 25_000 })
   })
   it('authenticates every MCP transport with the M2M bearer', async () => {
     listTools.mockResolvedValue({ tools: [] })

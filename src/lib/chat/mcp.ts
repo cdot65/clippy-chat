@@ -10,9 +10,16 @@ export type OpenAiTool = {
 
 const TOOLS_TTL_MS = 5 * 60_000
 // a hung (vs. down) MCP server must never hang the chat turn: bound every
-// SDK request — connect handshake and listTools short, tool execution longer
+// SDK request — connect handshake short, tool execution longer
 // (scm/external APIs can be slow; their own httpx timeout is 10s)
 const CONNECT_TIMEOUT_MS = 10_000
+// listTools needs its own, larger budget. The first tools/list through AIRS
+// after its route cache goes cold measured 10.6s in production against a
+// 10s bound, so the call timed out (-32001) and the turn silently lost every
+// tool; warm calls are 17-46ms, and clippy-mcp itself answers in 2ms, so the
+// latency is entirely in the gateway hop. Bounded rather than removed: a
+// genuinely hung gateway still has to fail before the user gives up.
+const LIST_TOOLS_TIMEOUT_MS = 25_000
 const TOOL_CALL_TIMEOUT_MS = 30_000
 let client: Client | null = null
 let clientExpiresAt = 0
@@ -54,7 +61,7 @@ export async function getMcpTools(): Promise<OpenAiTool[]> {
   try {
     const c = await getClient()
     if (!c) return []
-    const { tools } = await c.listTools(undefined, { timeout: CONNECT_TIMEOUT_MS })
+    const { tools } = await c.listTools(undefined, { timeout: LIST_TOOLS_TIMEOUT_MS })
     const mapped = tools.map((t) => ({
       type: 'function' as const,
       function: { name: t.name, description: t.description,
