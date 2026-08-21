@@ -12,6 +12,11 @@ const schema = z.object({
   INFERENCE_MODEL: z.string().default('@vllm2/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL'),
   INFERENCE_API_KEY: z.string().optional(), // gateway key (gateway) or --api-key (direct)
   INFERENCE_AUTH_MODE: z.enum(['direct', 'gateway']).default('direct'),
+  // Keycloak client_credentials identity for gateway inference (scope
+  // completions.write). Separate client from MCP on purpose — see m2m.ts.
+  INFERENCE_TOKEN_URL: z.url().optional(),
+  INFERENCE_CLIENT_ID: z.string().min(1).optional(),
+  INFERENCE_CLIENT_SECRET: z.string().min(1).optional(),
   MCP_SERVER_URL: z.url().optional(), // unset ⇒ MCP tools disabled
   MCP_AUTH_MODE: z.enum(['direct', 'gateway']).default('direct'),
   MCP_TOKEN_URL: z.url().optional(),
@@ -25,10 +30,17 @@ const schema = z.object({
   ADMIN_PASSWORD: z.string().min(1),
   M2M_SCOPE: z.string().default('clippy-api'),
 }).superRefine((value, context) => {
-  // AIRS rejects an unauthenticated caller outright, so an unset key is a boot
-  // failure rather than a 401 on the first chat turn.
-  if (value.INFERENCE_AUTH_MODE === 'gateway' && !value.INFERENCE_API_KEY)
-    context.addIssue({ code: 'custom', path: ['INFERENCE_API_KEY'], message: 'INFERENCE_API_KEY required with INFERENCE_AUTH_MODE=gateway' })
+  // AIRS rejects an unauthenticated caller outright, so an unset credential is
+  // a boot failure rather than a 401 on the first chat turn. Either credential
+  // satisfies this: the Keycloak client (preferred) or the legacy static key.
+  // Requiring the client triple outright would take the whole app down — env()
+  // is lazy and shared, so a parse failure 500s every route, not just chat —
+  // during any window where the code ships before the Keycloak client exists.
+  const inferenceClient = [value.INFERENCE_TOKEN_URL, value.INFERENCE_CLIENT_ID, value.INFERENCE_CLIENT_SECRET]
+  if (inferenceClient.some(Boolean) && !inferenceClient.every(Boolean))
+    context.addIssue({ code: 'custom', path: ['INFERENCE_CLIENT_ID'], message: 'INFERENCE_TOKEN_URL, INFERENCE_CLIENT_ID and INFERENCE_CLIENT_SECRET must be set together' })
+  if (value.INFERENCE_AUTH_MODE === 'gateway' && !value.INFERENCE_API_KEY && !inferenceClient.every(Boolean))
+    context.addIssue({ code: 'custom', path: ['INFERENCE_CLIENT_ID'], message: 'INFERENCE_AUTH_MODE=gateway requires the INFERENCE_CLIENT_* Keycloak client (or a legacy INFERENCE_API_KEY)' })
   if (!value.MCP_SERVER_URL) return
   for (const field of ['MCP_TOKEN_URL', 'MCP_CLIENT_ID', 'MCP_CLIENT_SECRET'] as const) {
     if (!value[field]) context.addIssue({ code: 'custom', path: [field], message: `${field} required with MCP_SERVER_URL` })

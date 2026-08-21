@@ -22,10 +22,27 @@ describe('parseEnv', () => {
     expect(env.INFERENCE_AUTH_MODE).toBe('direct')
     expect(env.MCP_AUTH_MODE).toBe('direct')
   })
-  it('rejects gateway inference without a gateway key', () => {
+  it('rejects gateway inference without a gateway credential', () => {
     expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway' })).toThrow(/INFERENCE_API_KEY/)
     expect(parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', INFERENCE_API_KEY: 'k' }).INFERENCE_AUTH_MODE)
       .toBe('gateway')
+  })
+
+  const inferenceClient = {
+    INFERENCE_TOKEN_URL: 'https://auth.example.com/token',
+    INFERENCE_CLIENT_ID: 'clippy-inference-client',
+    INFERENCE_CLIENT_SECRET: 'secret',
+  }
+
+  it('accepts the Keycloak client as the gateway credential without a static key', () => {
+    expect(parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', ...inferenceClient }).INFERENCE_CLIENT_ID)
+      .toBe('clippy-inference-client')
+  })
+
+  it('rejects a half-configured inference client rather than silently falling back', () => {
+    const { INFERENCE_CLIENT_SECRET: _omitted, ...partial } = inferenceClient
+    expect(() => parseEnv({ ...base, INFERENCE_AUTH_MODE: 'gateway', INFERENCE_API_KEY: 'k', ...partial }))
+      .toThrow(/must be set together/)
   })
   it('rejects an unknown auth mode rather than silently falling back', () => {
     expect(() => parseEnv({ ...base, MCP_AUTH_MODE: 'airs' })).toThrow()

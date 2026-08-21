@@ -1,5 +1,6 @@
 import { env } from '~/lib/env'
 import type { ChatMessage } from './history'
+import { getInferenceCredential, hasInferenceClientCredentials } from './inference-auth'
 import type { OpenAiTool } from './mcp'
 
 export type ToolCall = { id: string; name: string; arguments: string }
@@ -26,9 +27,21 @@ export class InferenceError extends Error {
 
 /** AIRS authenticates the caller with `x-portkey-api-key`; a bare vLLM behind
  *  `--api-key` wants `Authorization: Bearer`. Sending the wrong one is a 401,
- *  and sending both risks the gateway forwarding our key upstream, so pick. */
-function inferenceAuthHeaders(): Record<string, string> {
+ *  and sending both risks the gateway forwarding our key upstream, so pick.
+ *
+ *  In gateway mode the credential is a Keycloak `completions.write` JWT whose
+ *  portkey_oid/portkey_workspace claims authenticate the org — that is what
+ *  replaces a static workspace key (see the Security Handoff, "Org-level JWKS").
+ *  Only the gateway header is sent: X-Auth-Token carries a per-destination
+ *  identity for MCP routes, and /v1/chat/completions has no destination server.
+ *  A static INFERENCE_API_KEY remains the fallback until the Keycloak client is
+ *  provisioned, and stays the only credential in direct mode. */
+async function inferenceAuthHeaders(): Promise<Record<string, string>> {
   const { INFERENCE_API_KEY, INFERENCE_AUTH_MODE } = env()
+  if (INFERENCE_AUTH_MODE === 'gateway' && hasInferenceClientCredentials()) {
+    const { accessToken } = await getInferenceCredential()
+    return { 'x-portkey-api-key': accessToken }
+  }
   if (!INFERENCE_API_KEY) return {} // dev vLLM may run without a key
   return INFERENCE_AUTH_MODE === 'gateway'
     ? { 'x-portkey-api-key': INFERENCE_API_KEY }
@@ -42,7 +55,7 @@ export async function* chatStream(
   const { signal, tools } = opts
   const res = await fetch(`${env().INFERENCE_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...inferenceAuthHeaders() },
+    headers: { 'content-type': 'application/json', ...(await inferenceAuthHeaders()) },
     body: JSON.stringify({
       model: env().INFERENCE_MODEL, messages, stream: true,
       stream_options: { include_usage: true },

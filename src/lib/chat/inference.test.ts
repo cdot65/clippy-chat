@@ -9,16 +9,30 @@ const { envValue } = vi.hoisted(() => ({
     INFERENCE_MODEL: 'test-model',
     INFERENCE_API_KEY: 'test-key' as string | undefined,
     INFERENCE_AUTH_MODE: 'direct' as 'direct' | 'gateway',
+    INFERENCE_TOKEN_URL: undefined as string | undefined,
+    INFERENCE_CLIENT_ID: undefined as string | undefined,
+    INFERENCE_CLIENT_SECRET: undefined as string | undefined,
   },
 }))
 vi.mock('~/lib/env', () => ({ env: () => envValue }))
 
 import { chatStream } from './inference'
+import { _resetInferenceAuthForTests } from './inference-auth'
+
+const withInferenceClient = () => {
+  envValue.INFERENCE_TOKEN_URL = 'https://auth.example.com/token'
+  envValue.INFERENCE_CLIENT_ID = 'clippy-inference-client'
+  envValue.INFERENCE_CLIENT_SECRET = 'inference-secret'
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
   envValue.INFERENCE_API_KEY = 'test-key'
   envValue.INFERENCE_AUTH_MODE = 'direct'
+  envValue.INFERENCE_TOKEN_URL = undefined
+  envValue.INFERENCE_CLIENT_ID = undefined
+  envValue.INFERENCE_CLIENT_SECRET = undefined
+  _resetInferenceAuthForTests()
 })
 
 const sse = (lines: string[]) => new Response(
@@ -126,4 +140,34 @@ it('omits tools key from request body when no tools given', async () => {
   mockSseResponse([{ choices: [{ delta: { content: 'hi' } }] }])
   await collect(chatStream([{ role: 'user', content: 'hi' }]))
   expect(JSON.parse(lastFetchBody())).not.toHaveProperty('tools')
+})
+
+it('sends a minted Keycloak JWT as the gateway key when the client is configured', async () => {
+  envValue.INFERENCE_AUTH_MODE = 'gateway'
+  withInferenceClient()
+  const calls: Array<[string, RequestInit]> = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    calls.push([url, init])
+    if (url.endsWith('/token')) return new Response(JSON.stringify({ access_token: 'minted-jwt', expires_in: 300 }), { status: 200 })
+    return sse(['[DONE]'])
+  }))
+
+  await collect(chatStream([{ role: 'user', content: 'hi' }]))
+
+  const headers = calls.find(([u]) => !u.endsWith('/token'))![1].headers as Record<string, string>
+  expect(headers['x-portkey-api-key']).toBe('minted-jwt')
+  // X-Auth-Token forwards a per-destination identity; inference has no
+  // destination server, so the gateway header is the only credential
+  expect(headers['X-Auth-Token']).toBeUndefined()
+  expect(headers.authorization).toBeUndefined()
+})
+
+it('falls back to the static gateway key until the Keycloak client is provisioned', async () => {
+  envValue.INFERENCE_AUTH_MODE = 'gateway'
+  mockSseResponse([])
+
+  await collect(chatStream([{ role: 'user', content: 'hi' }]))
+
+  const init = (globalThis.fetch as any).mock.calls[0][1]
+  expect((init.headers as Record<string, string>)['x-portkey-api-key']).toBe('test-key')
 })
