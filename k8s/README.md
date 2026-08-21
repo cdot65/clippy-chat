@@ -10,7 +10,7 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 | `00-namespace.yaml` | `clippy` namespace |
 | `10-postgres.yaml` | Postgres StatefulSet + Service |
 | `11-postgres-longhorn-pvc.yaml` | 10Gi Longhorn PostgreSQL claim |
-| `15-secrets.yaml` | OnePasswordItem → application, MCP, and MCP OAuth client Secrets |
+| `15-secrets.yaml` | OnePasswordItem → application, MCP, and MCP/inference OAuth client Secrets |
 | `20-app.yaml` | App Deployment + Service |
 | `30-middleware.yaml` | Traefik rate-limit + HTTPS redirect |
 | `40-certificate.yaml` | cert-manager Certificate (`clippy.cdot.io`) |
@@ -41,9 +41,15 @@ env var the app actually reads. Renaming the 1Password field itself is a separat
 change.
 | `Talos - Clippy MCP` | `clippy-mcp-secrets` | `BRAVE_API_KEY`, `SCM_CLIENT_ID`, `SCM_CLIENT_SECRET`, `SCM_TSG_ID` |
 | `Truffles - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
+| `Truffles - Keycloak clippy-inference-client` | `clippy-inference-client` | `INFERENCE_TOKEN_URL`, `INFERENCE_CLIENT_ID`, `INFERENCE_CLIENT_SECRET`† |
+
+† `INFERENCE_CLIENT_SECRET` is not yet present on the 1Password item (created with
+`INFERENCE_TOKEN_URL` and `INFERENCE_CLIENT_ID` only). The Secret reconciles without it, but
+client-credentials minting fails until the field is added. Nothing references it yet — the
+`20-app.yaml` env wiring lands with the inference-JWT change.
 
 Bootstrap / refresh AI Security Academy items from the live namespace
-(preserves current values). The scoped Truffles item is managed separately.
+(preserves current values). The scoped Truffles items are managed separately.
 
 ```bash
 ./scripts/sync-clippy-secrets-to-1password.sh
