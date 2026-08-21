@@ -23,7 +23,7 @@ spec:
         - name: harbor-pull-secret
       initContainers:
         - name: migrate
-          image: registry.cdot.io/clippy/clippy-chat:sha-f1036da66d7b84a4e55813e3da3e73c3f6f4e3ee@sha256:25139aae0c087744504bab2c06683f1f2bca8e43432877c20800fbae65d45de5
+          image: registry.cdot.io/clippy/clippy-chat:sha-3eed1fd02e88629e756c33b90690530792f5a2fb@sha256:6491ab94a3f1871291fe06ef5ef74cc18824dc1b5cd40a478a2af5d6e6e83949
           imagePullPolicy: Always
           command: ["node", "scripts/migrate.mjs"]
           envFrom:
@@ -31,7 +31,7 @@ spec:
                 name: clippy-app
       containers:
         - name: app
-          image: registry.cdot.io/clippy/clippy-chat:sha-f1036da66d7b84a4e55813e3da3e73c3f6f4e3ee@sha256:25139aae0c087744504bab2c06683f1f2bca8e43432877c20800fbae65d45de5
+          image: registry.cdot.io/clippy/clippy-chat:sha-3eed1fd02e88629e756c33b90690530792f5a2fb@sha256:6491ab94a3f1871291fe06ef5ef74cc18824dc1b5cd40a478a2af5d6e6e83949
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
