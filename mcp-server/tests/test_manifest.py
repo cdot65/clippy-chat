@@ -10,10 +10,16 @@ SECRET_MANIFEST = ROOT / "k8s" / "15-secrets.yaml"
 # MCP server, so its published digest is unchanged. They are separate services
 # and are allowed to sit on different commits; each is still pinned by tag AND
 # digest, which is the property this file exists to enforce.
-APP_SHA = "f1036da66d7b84a4e55813e3da3e73c3f6f4e3ee"
+#
+# These constants must be updated in the SAME commit that re-pins the manifest.
+# They are not, and cannot be, derived from it — the point is to make a digest
+# bump a deliberate, reviewed edit. Forgetting fails this job, and because
+# `build-and-push` needs it, no image publishes at all until it is fixed: the
+# pipeline stops shipping while every other check stays green.
+APP_SHA = "3eed1fd02e88629e756c33b90690530792f5a2fb"
 APP_IMAGE = (
     f"registry.cdot.io/clippy/clippy-chat:sha-{APP_SHA}"
-    "@sha256:25139aae0c087744504bab2c06683f1f2bca8e43432877c20800fbae65d45de5"
+    "@sha256:6491ab94a3f1871291fe06ef5ef74cc18824dc1b5cd40a478a2af5d6e6e83949"
 )
 MCP_SHA = "fe3b2a2ba0135ddb4880c3021c957420aa19664a"
 MCP_IMAGE = (
