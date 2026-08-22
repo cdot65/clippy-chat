@@ -16,10 +16,10 @@ SECRET_MANIFEST = ROOT / "k8s" / "15-secrets.yaml"
 # bump a deliberate, reviewed edit. Forgetting fails this job, and because
 # `build-and-push` needs it, no image publishes at all until it is fixed: the
 # pipeline stops shipping while every other check stays green.
-APP_SHA = "3eed1fd02e88629e756c33b90690530792f5a2fb"
+APP_SHA = "d600ebff11656747ec2f3ad588a586bc29c41b93"
 APP_IMAGE = (
     f"registry.cdot.io/clippy/clippy-chat:sha-{APP_SHA}"
-    "@sha256:6491ab94a3f1871291fe06ef5ef74cc18824dc1b5cd40a478a2af5d6e6e83949"
+    "@sha256:c624449aa355319764ea9c321fce892b259f1455092048d2cb58a2db2ec6e22f"
 )
 MCP_SHA = "fe3b2a2ba0135ddb4880c3021c957420aa19664a"
 MCP_IMAGE = (
