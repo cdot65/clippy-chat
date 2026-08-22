@@ -152,8 +152,10 @@ tracked moving it there. That was backwards. **#22 is closed as invalid.**
 
 The genuine drift ran the other way — `clippy-postgres`, `clippy-app`, and `clippy-mcp-secrets`
 were sourced from the shared **AI Security Academy** vault. As of 2026-08-22 they reconcile from the
-dedicated **Clippy Chat** vault. The Keycloak client credentials remain in the realm-scoped
-**Truffles** vault, which is not an Academy vault.
+dedicated **Clippy Chat** vault, along with the delivery credentials (Harbor robots, Forgejo PAT and
+SSH key) that had been filed in **AI Security Academy - Automation**, and the Keycloak client
+credentials that had been in the shared realm vault **Truffles**. Every Clippy secret now has one
+owner.
 
 Changing an `itemPath` is not a one-line edit: `clippy-app` is consumed via `envFrom` and its
 `secretKeyRef`s are non-optional, so a vault the Connect server cannot resolve puts every
@@ -174,6 +176,6 @@ Connect access with a throwaway canary first. See
 - The chat API bearer path enforces `aud` (`M2M_AUDIENCE=stack-clippy`), so a `clippy-api` token
   minted outside the Clippy stack no longer authenticates.
 - Clippy secrets are isolated from AI Security Academy vaults: application, Postgres, and MCP
-  secrets source from the **Clippy Chat** vault; Keycloak client credentials from **Truffles**.
+  secrets and Keycloak client credentials all source from the dedicated **Clippy Chat** vault.
 
 See [Production evidence](./production-evidence) for the recorded results.
