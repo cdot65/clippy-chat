@@ -73,8 +73,8 @@ vault, namespace, or Keycloak stack.
 
 - Clippy application, Postgres, and MCP tool secrets: the dedicated **Clippy Chat** vault
   (`gphlxcldfinqyzo6jn7sa674sa`).
-- Keycloak client credentials (`clippy-mcp-client`, `clippy-inference-client`): the realm-scoped
-  **Truffles** vault, which is not an Academy vault.
+- Keycloak client credentials (`clippy-mcp-client`, `clippy-inference-client`): the **Clippy Chat**
+  vault. Moved out of the shared realm vault 2026-08-22.
 - Kubernetes Secrets are reconciled objects, not the source of truth.
 - Never copy secret values into manifests, Argo parameters, Forgejo variables, evidence, or docs.
 - Never put admin passwords, client secrets, gateway keys, or JWTs in argv.
@@ -88,7 +88,7 @@ invalid.
 
 The real drift was the other direction — `clippy-postgres`, `clippy-app`, and `clippy-mcp-secrets`
 were sourced from the shared **AI Security Academy** vault. They now come from the dedicated
-**Clippy Chat** vault. The Keycloak client credentials stay in the realm-scoped **Truffles** vault.
+**Clippy Chat** vault, as do the Keycloak client credentials.
 
 Changing an `itemPath` is not a one-line edit: `clippy-app` is consumed via `envFrom` and its
 `secretKeyRef`s are non-optional, so a vault the Connect server cannot resolve puts every
@@ -120,8 +120,7 @@ not sufficient — query the running server.
 
 ## Rotation procedure
 
-1. Rotate the credential only in its owning vault — **Truffles** for the Keycloak client items,
-   **Clippy Chat** for application/Postgres/MCP secrets.
+1. Rotate the credential only in the **Clippy Chat** vault, which owns every Clippy secret.
 2. Wait for `clippy-mcp-client` Secret reconciliation.
 3. Prove the app can mint a token from the live Secret and verify selected claims.
 4. Run initialize, tools/list, and safe tools/call through AIRS.

@@ -62,4 +62,11 @@ def test_chat_uses_secret_backed_mcp_client_credentials():
 
     secret_text = SECRET_MANIFEST.read_text()
     assert "name: clippy-mcp-client" in secret_text
-    assert "vaults/Truffles/items/Truffles - Keycloak clippy-mcp-client" in secret_text
+    assert "vaults/Clippy Chat/items/Talos - Keycloak clippy-mcp-client" in secret_text
+
+    # Clippy and AI Security Academy are separate stacks, and Truffles is the
+    # shared realm vault spanning every stack in it. Every Clippy secret — runtime
+    # and delivery — belongs in the dedicated Clippy Chat vault.
+    for line in secret_text.splitlines():
+        if "itemPath:" in line:
+            assert "vaults/Clippy Chat/" in line, f"Clippy secret outside its own vault: {line.strip()}"

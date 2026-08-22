@@ -13,8 +13,8 @@ This file replaces `mcp-client-secret-migration.md`, which implemented the oppos
 | `clippy-postgres` | **Clippy Chat** | `Talos - Clippy Postgres` |
 | `clippy-app` | **Clippy Chat** | `Talos - Clippy App` |
 | `clippy-mcp-secrets` | **Clippy Chat** | `Talos - Clippy MCP` |
-| `clippy-mcp-client` | **Truffles** (realm-scoped, not Academy) | `Truffles - Keycloak clippy-mcp-client` |
-| `clippy-inference-client` | **Truffles** (realm-scoped, not Academy) | `Truffles - Keycloak clippy-inference-client` |
+| `clippy-mcp-client` | **Clippy Chat** | `Talos - Keycloak clippy-mcp-client` |
+| `clippy-inference-client` | **Clippy Chat** | `Talos - Keycloak clippy-inference-client` |
 
 Clippy Chat vault UUID: `gphlxcldfinqyzo6jn7sa674sa`.
 

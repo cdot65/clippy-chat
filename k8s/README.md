@@ -26,8 +26,8 @@ production responses are documented in the
 
 ## Secrets
 
-Vaults: the dedicated **Clippy Chat** vault and realm-scoped **Truffles** client credentials. Both
-are reachable by the Connect operator. Field labels must match Secret keys 1:1:
+Vault: the dedicated **Clippy Chat** vault — every Clippy secret, runtime and delivery, lives
+there. Reachable by the Connect operator. Field labels must match Secret keys 1:1:
 
 > **Stack isolation:** Clippy Chat and AI Security Academy are separate stacks. Nothing for Clippy
 > lives in an Academy vault, namespace, or Keycloak stack — they share only the `truffles` realm.
@@ -48,11 +48,11 @@ are reachable by the Connect operator. Field labels must match Secret keys 1:1:
 env var the app actually reads. Renaming the 1Password field itself is a separate, out-of-band
 change.
 | `Talos - Clippy MCP` | `clippy-mcp-secrets` | `BRAVE_API_KEY`, `SCM_CLIENT_ID`, `SCM_CLIENT_SECRET`, `SCM_TSG_ID` |
-| `Truffles - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
-| `Truffles - Keycloak clippy-inference-client` | `clippy-inference-client` | `INFERENCE_TOKEN_URL`, `INFERENCE_CLIENT_ID`, `INFERENCE_CLIENT_SECRET` |
+| `Talos - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
+| `Talos - Keycloak clippy-inference-client` | `clippy-inference-client` | `INFERENCE_TOKEN_URL`, `INFERENCE_CLIENT_ID`, `INFERENCE_CLIENT_SECRET` |
 
 Bootstrap / refresh Clippy Chat items from the live namespace
-(preserves current values). The scoped Truffles items are managed separately.
+(preserves current values).
 
 ```bash
 ./scripts/sync-clippy-secrets-to-1password.sh
