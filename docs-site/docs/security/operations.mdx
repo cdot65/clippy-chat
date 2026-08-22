@@ -79,8 +79,15 @@ and checks `aud`, `azp`, `scope`, and `portkey_workspace`. `/healthz` is the onl
 The deployed `k8s/15-secrets.yaml` currently projects this credential from the **Truffles** vault.
 Production reconciliation and authorization tests pass, but placement violates the approved
 Runtime-vault boundary. [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
-tracks secret-safe migration. Do not rotate or grant final secret-boundary approval until it is
-resolved and the E2E matrix is repeated.
+tracks secret-safe migration; the step-by-step cutover is `k8s/mcp-client-secret-migration.md`.
+Do not rotate or grant final secret-boundary approval until it is resolved and the E2E matrix is
+repeated.
+
+The app's three `clippy-mcp-client` `secretKeyRef`s are non-optional by design, so this is not a
+one-line `itemPath` edit: if the new vault does not reconcile, every `clippy-chat` pod enters
+`CreateContainerConfigError` on its next roll. The runbook proves Connect-operator access with a
+throwaway canary item first, and separates **migration** (same values, new owner) from **rotation**
+(new value) so a denial is never ambiguous.
 :::
 
 ## Rotation procedure

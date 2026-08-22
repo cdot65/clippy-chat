@@ -16,6 +16,9 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 | `40-certificate.yaml` | cert-manager Certificate (`clippy.cdot.io`) |
 | `50-ingressroute.yaml` | Traefik IngressRoutes |
 | `60-mcp.yaml` | MCP Deployment + ClusterIP Service (no Ingress) |
+| `m2m-audience-rollout.md` | Runbook: arm the `clippy-api` audience gate (Keycloak mapper first) |
+| `mcp-client-secret-migration.md` | Runbook: move `clippy-mcp-client` to the Runtime vault (#22) |
+| `postgres-storage-migration.md` | Runbook: PostgreSQL local-path → Longhorn (#11) |
 
 External AIRS routing, OAuth/JWKS claim enforcement, request diagrams, test curls, and sanitized
 production responses are documented in the
@@ -29,7 +32,10 @@ are reachable by the Connect operator. Field labels must match Secret keys 1:1:
 > **Known drift:** the approved segmentation design requires `clippy-mcp-client` only in
 > **AI Security Academy - Runtime**. The table below describes the current deployed source,
 > not the approved end state. [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
-> tracks secret-safe migration. Do not rotate the current item before that runbook is approved.
+> tracks secret-safe migration; the runbook is
+> [`mcp-client-secret-migration.md`](mcp-client-secret-migration.md). Do not rotate the current
+> item before that runbook is approved, and note that the app's `secretKeyRef`s are non-optional:
+> an `itemPath` flip that fails to reconcile takes the whole deployment down, not just MCP.
 
 | 1P item | Secret | Required fields |
 |---------|--------|-----------------|

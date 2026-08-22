@@ -76,8 +76,18 @@ For service accounts — **and the red-team adapter**. Callers present
    (`${KC_ISSUER}/protocol/openid-connect/certs`, cached).
 2. Options: `issuer: KC_ISSUER`, `algorithms: ['RS256']`, `requiredClaims: ['sub','scope']`.
 3. **The scope gate:** splits the `scope` claim on spaces; if it does **not** contain
-   `M2M_SCOPE` (default `clippy-api`), it throws `missing required scope clippy-api`. This is the
-   sole authorization check for machine tokens.
+   `M2M_SCOPE` (default `clippy-api`), it throws `missing required scope clippy-api`.
+4. **The audience gate**, when `M2M_AUDIENCE` is set: `aud` joins `requiredClaims` and must contain
+   that value, so a correctly scoped token minted for another audience in the same realm is
+   rejected. Unset (production today) means audience is unchecked and the scope gate stands alone —
+   the app logs one `M2M_AUDIENCE unset` warning per process to keep that visible.
+
+:::note Why the audience gate ships disarmed
+Keycloak puts no useful `aud` on a `client_credentials` token until the calling client's dedicated
+scope carries an audience mapper. Turning the check on before the realm change would `401` every
+machine caller, this adapter included. The rollout order — mapper, prove the claim, then arm the env
+var — is `k8s/m2m-audience-rollout.md`.
+:::
 
 A valid bearer upserts a **service-account** profile (`isServiceAccount: true`). A failed verify
 logs and returns `null` (→ `401`) rather than throwing.

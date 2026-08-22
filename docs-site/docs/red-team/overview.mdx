@@ -53,7 +53,7 @@ authenticate(context)          pre_process(context, input)        post_process(c
 
 | Adapter step | Clippy Chat source | Contract |
 | --- | --- | --- |
-| `authenticate` | Keycloak (external OIDC) → `src/lib/auth/bearer.ts` verifies the token | Token `scope` **must** contain `clippy-api` (`M2M_SCOPE`) or `verifyBearer` rejects it |
+| `authenticate` | Keycloak (external OIDC) → `src/lib/auth/bearer.ts` verifies the token | Token `scope` **must** contain `clippy-api` (`M2M_SCOPE`) or `verifyBearer` rejects it. Once `M2M_AUDIENCE` is armed, `aud` must contain it too — the runner's Keycloak client needs an audience mapper before that flag flips (`k8s/m2m-audience-rollout.md`) |
 | `pre_process` | `src/routes/api/chat.ts` → `src/lib/chat/service.ts` (`ensureConversation`) | Body `{conversationId, message}`; a fresh UUID auto-creates the conversation |
 | `post_process` | `sse()` helper in `src/routes/api/chat.ts` | `event: delta` → reply tokens; `event: done` → ignore; `event: error` → mid-stream failure (still HTTP 200) |
 

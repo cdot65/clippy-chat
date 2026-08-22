@@ -29,6 +29,11 @@ const schema = z.object({
   ADMIN_USERNAME: z.string().min(1),
   ADMIN_PASSWORD: z.string().min(1),
   M2M_SCOPE: z.string().default('clippy-api'),
+  // Expected `aud` on machine bearer tokens. Unset ⇒ audience unchecked, which
+  // is the pre-mapper default and the historical behaviour; see bearer.ts. Set
+  // it only once the Keycloak client's dedicated scope actually mints this
+  // audience, or every machine caller 401s the moment the pods roll.
+  M2M_AUDIENCE: z.string().min(1).optional(),
 }).superRefine((value, context) => {
   // AIRS rejects an unauthenticated caller outright, so an unset credential is
   // a boot failure rather than a 401 on the first chat turn. Either credential

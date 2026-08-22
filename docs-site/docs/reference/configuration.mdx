@@ -28,6 +28,7 @@ call — the app fails fast rather than booting half-configured.
 | `ADMIN_USERNAME` | non-empty string | ✅ | — |
 | `ADMIN_PASSWORD` | non-empty string | ✅ | — |
 | `M2M_SCOPE` | string — the scope a bearer token **must** carry | — | `clippy-api` |
+| `M2M_AUDIENCE` | string — the `aud` a bearer token **must** carry | optional | unset — audience unchecked until a Keycloak audience mapper exists (see below) |
 
 ## `.env.example`
 
@@ -46,6 +47,9 @@ SESSION_SECRET=<openssl rand -base64 32>
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=changeme
 M2M_SCOPE=clippy-api
+# Expected aud on machine bearer tokens. Leave unset until the Keycloak client's
+# dedicated scope mints this audience — arming it early 401s every machine caller.
+# M2M_AUDIENCE=clippy-api
 ```
 
 :::danger Never commit a real `.env`
@@ -61,7 +65,13 @@ deployment's secret store — not in the repo.
 - **`SESSION_SECRET`** is `sha256`'d to derive the AES-256-GCM key that encrypts stored provider
   tokens. Rotating it invalidates existing encrypted tokens — affected sessions are transparently
   destroyed and users re-log-in.
-- **`M2M_SCOPE`** is the single authorization check for machine tokens. The
+- **`M2M_SCOPE`** is the primary authorization check for machine tokens. The
   [red-team adapter](/red-team/overview) must request this scope or every probe returns `401`.
+- **`M2M_AUDIENCE`** adds a second, independent check: when set, `verifyBearer` requires `aud` and
+  demands it contain this value, so a correctly scoped token minted for a *different* audience in
+  the same realm no longer authenticates. It is unset in production on purpose — Keycloak mints no
+  useful `aud` on a `client_credentials` token until the calling client's dedicated scope carries an
+  audience mapper, so arming it first would `401` every machine caller. Mapper first, env var
+  second: `k8s/m2m-audience-rollout.md`.
 - **`ADMIN_PASSWORD`** is only applied when the admin row is first seeded (see
   [Authentication](/guides/authentication#mode-b--local-break-glass-admin)).

@@ -98,6 +98,24 @@ without a separate workspace API key.
   fails closed at the server.
 - The direct in-cluster adapter route remains supported, but it bypasses AIRS and must supply a
   valid Clippy bearer directly. See [MCP Tool Adapter](/red-team/mcp-adapter).
+- The chat API's own `clippy-api` bearer path is a separate contract and does not authorize MCP.
+
+## Chat API bearer path
+
+`verifyBearer` guards `/api/chat` for service accounts and the red-team runner: RS256, the realm
+issuer, and `scope` containing `clippy-api`. Audience was historically unchecked there, so any
+`clippy-api` token in the realm authenticated regardless of who it was minted for.
+
+`M2M_AUDIENCE` closes that. When set, `aud` joins the required claims and must contain the
+configured value; when unset — production today — the scope gate stands alone and the app logs one
+`M2M_AUDIENCE unset` warning per process. It ships disarmed because Keycloak mints no useful `aud`
+on a `client_credentials` token until the calling client's dedicated scope carries an audience
+mapper, so enforcing first would `401` every machine caller.
+
+Rollout order is mapper → prove the claim in a freshly minted token → arm the env var, in
+`k8s/m2m-audience-rollout.md`. The recommended value is `clippy-api`, deliberately distinct from
+the MCP audience `clippy`, so `aud` and `scope` fail independently across the two paths. See
+[Authentication](/guides/authentication#mode-c--machine-bearer-jwts-client_credentials-scope-clippy-api).
 
 ## Auth0 and other customer IdPs
 
@@ -124,6 +142,12 @@ vault; design requires **AI Security Academy - Runtime** only. See
 [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22). This blocks final
 secret-boundary approval, not independent execution of the non-mutating E2E probes.
 
+The cutover runbook is `k8s/mcp-client-secret-migration.md`. It is not a one-line `itemPath` edit:
+the app's three `clippy-mcp-client` `secretKeyRef`s are non-optional, so a vault that fails to
+reconcile puts every `clippy-chat` pod into `CreateContainerConfigError` — the whole app, not just
+MCP. The runbook proves Connect-operator access to the Runtime vault with a throwaway canary item
+first, and separates migration (same values, new owner) from rotation (new value).
+
 ## Review acceptance criteria
 
 - Positive token initializes Clippy, lists the exact tool set, and calls a safe tool.
@@ -134,6 +158,8 @@ secret-boundary approval, not independent execution of the non-mutating E2E prob
 - Tool parity survives AIRS and MCP workload restart.
 - Source clients remain disabled only after destination-client configuration parity and token
   expiry are proven.
+- The chat API bearer path can enforce `aud` (`M2M_AUDIENCE`; shipped, tested, disarmed until the
+  Keycloak audience mappers land).
 - `clippy-mcp-client` is migrated to AI Security Academy - Runtime and issue #22 is closed.
 
 See [Production evidence](./production-evidence) for the recorded results.
