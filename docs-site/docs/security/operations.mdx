@@ -200,6 +200,31 @@ kubectl -n clippy logs deployment/clippy-chat --since=15m |
   grep -E 'MCP token request failed|invalid MCP token response'
 ```
 
+## Silent publishing failure
+
+Observed 2026-08-21 → 2026-08-22. `build-and-push` declares `needs: [application, kubernetes, mcp]`.
+When `mcp` fails the job is **skipped**, and Forgejo reports a skipped job as `success` in the
+combined commit status. The pipeline stops shipping while every check reads green.
+
+Root cause that time: `mcp-server/tests/test_manifest.py` pins the app image by tag and digest as
+literal constants, and a manifest re-pin did not update them. Harbor held no artifact for any commit
+after `3eed1fd` for roughly a day, and nothing surfaced it.
+
+The registry is the ground truth, not the commit status. Check it with the cluster's own read-only
+pull robot:
+
+```bash
+auth=$(kubectl -n clippy get secret harbor-pull-secret \
+  -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d | jq -r '.auths[].auth')
+tok=$(curl -s -H "Authorization: Basic ${auth}" \
+  'https://registry.cdot.io/service/token?service=harbor-registry&scope=repository:clippy/clippy-chat:pull' \
+  | jq -r .token)
+curl -s -H "Authorization: Bearer ${tok}" \
+  https://registry.cdot.io/v2/clippy/clippy-chat/tags/list | jq -r '.tags[]' | grep '^sha-'
+```
+
+Whenever `k8s/20-app.yaml` is re-pinned, update `test_manifest.py` in the **same commit**.
+
 ## Rollback conditions
 
 Rollback or stop the rollout if any occurs:

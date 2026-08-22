@@ -83,10 +83,15 @@ For service accounts — **and the red-team adapter**. Callers present
    the app logs one `M2M_AUDIENCE unset` warning per process to keep that visible.
 
 :::note Why the audience gate ships disarmed
-Keycloak puts no useful `aud` on a `client_credentials` token until the calling client's dedicated
-scope carries an audience mapper. Turning the check on before the realm change would `401` every
-machine caller, this adapter included. The rollout order — mapper, prove the claim, then arm the env
-var — is `k8s/m2m-audience-rollout.md`.
+Arming it against a value the caller does not carry `401`s every machine caller, this adapter
+included, and there is no warn-on-mismatch mode. Disarmed by default lets the realm and the app
+change in either order.
+
+Today `clippy-m2m` tokens carry the bare string `aud: "stack-clippy"` — the per-stack audience —
+while `clippy-mcp-client` carries `["clippy", "stack-clippy"]`, adding a per-service one. So
+`stack-clippy` would enforce with no realm change; `clippy-api` needs one audience mapper and
+completes the per-service pattern. Check a real token before setting the value:
+`k8s/m2m-audience-rollout.md`.
 :::
 
 A valid bearer upserts a **service-account** profile (`isServiceAccount: true`). A failed verify
