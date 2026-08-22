@@ -210,6 +210,13 @@ sequenceDiagram
   end
 ```
 
+:::note The chat API bearer path has its own matrix
+Everything above exercises the MCP route through AIRS. The `/api/chat` `clippy-api` bearer path is
+a separate contract, and its audience gate (`M2M_AUDIENCE`) has its own positive/negative probes in
+`k8s/m2m-audience-rollout.md` — run those in the same window when that flag is armed, not as part
+of this matrix.
+:::
+
 ## 7. Restart and parity
 
 This is mutating and belongs in an approved production test window:

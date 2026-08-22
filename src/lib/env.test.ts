@@ -58,6 +58,12 @@ describe('parseEnv', () => {
     const env = parseEnv(base)
     expect(env.M2M_SCOPE).toBe('clippy-api')
   })
+  // no default on purpose: arming the audience gate before the Keycloak client
+  // mints the claim 401s every machine caller (see bearer.ts).
+  it('leaves the machine-token audience unset until the realm mapper exists', () => {
+    expect(parseEnv(base).M2M_AUDIENCE).toBeUndefined()
+    expect(parseEnv({ ...base, M2M_AUDIENCE: 'clippy-api' }).M2M_AUDIENCE).toBe('clippy-api')
+  })
   it('throws on missing required', () => {
     expect(() => parseEnv({})).toThrow()
   })

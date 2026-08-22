@@ -54,6 +54,9 @@ SESSION_SECRET=<openssl rand -base64 32>
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=changeme
 M2M_SCOPE=clippy-api
+# Expected aud on machine bearer tokens. Leave unset until the Keycloak client's
+# dedicated scope mints this audience — arming it early 401s every machine caller.
+# M2M_AUDIENCE=clippy-api
 ```
 
 See **[Configuration](/reference/configuration)** for every variable, its purpose, and defaults.
