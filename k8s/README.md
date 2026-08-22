@@ -17,7 +17,7 @@ Raw manifests for the `clippy` namespace. Reconciled by the Argo CD Application
 | `50-ingressroute.yaml` | Traefik IngressRoutes |
 | `60-mcp.yaml` | MCP Deployment + ClusterIP Service (no Ingress) |
 | `m2m-audience-rollout.md` | Runbook: arm the `clippy-api` audience gate (Keycloak mapper first) |
-| `mcp-client-secret-migration.md` | Runbook: move `clippy-mcp-client` to the Runtime vault (#22) |
+| `vault-isolation.md` | Clippy/Academy vault separation + how to move a secret between vaults |
 | `postgres-storage-migration.md` | Runbook: PostgreSQL local-path → Longhorn (#11) |
 
 External AIRS routing, OAuth/JWKS claim enforcement, request diagrams, test curls, and sanitized
@@ -26,16 +26,18 @@ production responses are documented in the
 
 ## Secrets
 
-Vaults: **AI Security Academy** and scoped **Truffles** client credentials. Both
+Vaults: the dedicated **Clippy Chat** vault and realm-scoped **Truffles** client credentials. Both
 are reachable by the Connect operator. Field labels must match Secret keys 1:1:
 
-> **Known drift:** the approved segmentation design requires `clippy-mcp-client` only in
-> **AI Security Academy - Runtime**. The table below describes the current deployed source,
-> not the approved end state. [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
-> tracks secret-safe migration; the runbook is
-> [`mcp-client-secret-migration.md`](mcp-client-secret-migration.md). Do not rotate the current
-> item before that runbook is approved, and note that the app's `secretKeyRef`s are non-optional:
-> an `itemPath` flip that fails to reconcile takes the whole deployment down, not just MCP.
+> **Stack isolation:** Clippy Chat and AI Security Academy are separate stacks. Nothing for Clippy
+> lives in an Academy vault, namespace, or Keycloak stack — they share only the `truffles` realm.
+> Forgejo [#22](https://git.cdot.io/cdot.io/clippy-chat/issues/22), which tracked moving
+> `clippy-mcp-client` *into* **AI Security Academy - Runtime**, is closed as invalid; it required
+> the coupling this boundary forbids. See [`vault-isolation.md`](vault-isolation.md).
+>
+> Changing an `itemPath` is not a one-line edit: `clippy-app` is consumed via `envFrom` and the
+> `clippy-mcp-client` refs are non-optional, so a vault the Connect server cannot resolve takes the
+> whole deployment down — `clippy-postgres` included. Canary first.
 
 | 1P item | Secret | Required fields |
 |---------|--------|-----------------|
@@ -49,7 +51,7 @@ change.
 | `Truffles - Keycloak clippy-mcp-client` | `clippy-mcp-client` | `MCP_TOKEN_URL`, `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` |
 | `Truffles - Keycloak clippy-inference-client` | `clippy-inference-client` | `INFERENCE_TOKEN_URL`, `INFERENCE_CLIENT_ID`, `INFERENCE_CLIENT_SECRET` |
 
-Bootstrap / refresh AI Security Academy items from the live namespace
+Bootstrap / refresh Clippy Chat items from the live namespace
 (preserves current values). The scoped Truffles items are managed separately.
 
 ```bash

@@ -65,10 +65,28 @@ describe('AI Gateway MCP security handoff documentation', () => {
     expect(evidence).not.toMatch(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/)
   })
 
-  it('keeps the required runtime-vault boundary visible', () => {
+  // Was: "keeps the required runtime-vault boundary visible", asserting the docs
+  // demanded AI Security Academy - Runtime. That requirement was backwards —
+  // Clippy and the Academy are separate stacks — so the assertion now pins the
+  // isolation instead, and that #22 is recorded as invalid rather than pending.
+  it('keeps the Clippy/Academy vault isolation visible', () => {
     const operations = read('operations.mdx')
 
-    expect(operations).toContain('AI Security Academy - Runtime')
-    expect(operations).toContain('issues/22')
+    expect(operations).toContain('Clippy Chat')
+    expect(operations).toContain('separate stacks')
+    expect(operations).not.toMatch(/requires? `?clippy-mcp-client`? only in\s+\*\*AI Security Academy/)
+
+    const overview = read('overview.mdx')
+    expect(overview).toContain('closed as invalid')
+  })
+
+  it('sources no Clippy secret from an AI Security Academy vault', () => {
+    const manifest = readFileSync(resolve(root, 'k8s/15-secrets.yaml'), 'utf8')
+    const itemPaths = [...manifest.matchAll(/itemPath:\s*(.+)/g)].map((m) => m[1].trim())
+
+    expect(itemPaths.length).toBeGreaterThan(0)
+    for (const path of itemPaths) {
+      expect(path, `${path} must not live in an Academy vault`).not.toMatch(/^vaults\/AI Security Academy/)
+    }
   })
 })

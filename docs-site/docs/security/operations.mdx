@@ -67,33 +67,61 @@ and checks `aud`, `azp`, `scope`, and `portkey_workspace`. `/healthz` is the onl
 
 ## Secret ownership
 
-- The authoritative design requires `clippy-mcp-client` only in
-  **AI Security Academy - Runtime**, exposed to the scoped service account.
-- Clippy application/MCP downstream secrets remain in **AI Security Academy**.
+Clippy Chat and AI Security Academy are **separate stacks**. They coexist under the one `truffles`
+Keycloak realm, but their 1Password vaults are isolated and nothing for Clippy lives in an Academy
+vault, namespace, or Keycloak stack.
+
+- Clippy application, Postgres, and MCP tool secrets: the dedicated **Clippy Chat** vault
+  (`gphlxcldfinqyzo6jn7sa674sa`).
+- Keycloak client credentials (`clippy-mcp-client`, `clippy-inference-client`): the realm-scoped
+  **Truffles** vault, which is not an Academy vault.
 - Kubernetes Secrets are reconciled objects, not the source of truth.
 - Never copy secret values into manifests, Argo parameters, Forgejo variables, evidence, or docs.
 - Never put admin passwords, client secrets, gateway keys, or JWTs in argv.
 - Use stdin for token request bodies and curl header files (`-H @-`).
 
-:::danger Open secret-boundary gap
-The deployed `k8s/15-secrets.yaml` currently projects this credential from the **Truffles** vault.
-Production reconciliation and authorization tests pass, but placement violates the approved
-Runtime-vault boundary. [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
-tracks secret-safe migration; the step-by-step cutover is `k8s/mcp-client-secret-migration.md`.
-Do not rotate or grant final secret-boundary approval until it is resolved and the E2E matrix is
-repeated.
+:::info Vault boundary — resolved 2026-08-22
+Earlier revisions of this page required `clippy-mcp-client` in **AI Security Academy - Runtime**,
+and [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22) tracked migrating it
+there. That was **backwards**: Clippy must not depend on an Academy vault at all. #22 is closed as
+invalid.
 
-The app's three `clippy-mcp-client` `secretKeyRef`s are non-optional by design, so this is not a
-one-line `itemPath` edit: if the new vault does not reconcile, every `clippy-chat` pod enters
-`CreateContainerConfigError` on its next roll. The runbook proves Connect-operator access with a
-throwaway canary item first, and separates **migration** (same values, new owner) from **rotation**
-(new value) so a denial is never ambiguous.
+The real drift was the other direction — `clippy-postgres`, `clippy-app`, and `clippy-mcp-secrets`
+were sourced from the shared **AI Security Academy** vault. They now come from the dedicated
+**Clippy Chat** vault. The Keycloak client credentials stay in the realm-scoped **Truffles** vault.
+
+Changing an `itemPath` is not a one-line edit: `clippy-app` is consumed via `envFrom` and its
+`secretKeyRef`s are non-optional, so a vault the Connect server cannot resolve puts every
+`clippy-chat` pod into `CreateContainerConfigError` — and `clippy-postgres` with it. Always prove
+Connect access with a throwaway canary item first, and keep **migration** (same values, new source)
+in a different window from **rotation** (new value) so a failure is never ambiguous.
 :::
+
+## Granting Connect access to a new vault
+
+The operator runs in Connect mode: `OP_CONNECT_HOST=http://onepassword-connect:8080` with a bearer
+token from the `onepassword-token` secret. That token is a **JWT whose `1password.com/vts` claim is
+the vault allowlist** — it cannot be edited, only reissued. 1Password *service accounts* (`ops_…`)
+are a different mechanism and grant the operator nothing.
+
+To add a vault: grant the Connect server integration access to it, issue a new access token
+covering all required vaults, update `onepassword-token` (durably, via `talos-cluster/onepassword`
+— a hand-patched secret is reverted on the next Argo sync), then restart both deployments so
+`connect-sync` pulls the new vault. Verify before relying on it:
+
+```bash
+kubectl -n onepassword-system port-forward deploy/onepassword-connect 18080:8080 &
+TOKEN=$(kubectl -n onepassword-system get secret onepassword-token -o jsonpath='{.data.token}' | base64 -d)
+curl -s -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:18080/v1/vaults | jq -r '.[].name'
+```
+
+A token only ever gets **token scope ∩ server vault access**, so checking the decoded JWT alone is
+not sufficient — query the running server.
 
 ## Rotation procedure
 
-1. Resolve issue #22; create/rotate the destination credential only in the scoped
-   **AI Security Academy - Runtime** item.
+1. Rotate the credential only in its owning vault — **Truffles** for the Keycloak client items,
+   **Clippy Chat** for application/Postgres/MCP secrets.
 2. Wait for `clippy-mcp-client` Secret reconciliation.
 3. Prove the app can mint a token from the live Secret and verify selected claims.
 4. Run initialize, tools/list, and safe tools/call through AIRS.

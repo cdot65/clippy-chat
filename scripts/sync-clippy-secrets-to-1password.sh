@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Copy live clippy namespace Secret keys into AI Security Academy 1Password items
+# Copy live clippy namespace Secret keys into Clippy Chat 1Password items
 # used by k8s/15-secrets.yaml. Creates items if missing; updates fields if present.
 #
 # Prerequisites: op CLI signed in (desktop app integration), kubectl context = talos.
 # Does NOT print secret values.
 set -euo pipefail
 
-VAULT="AI Security Academy"
+VAULT="Clippy Chat"
 NS=clippy
 
 need() { command -v "$1" >/dev/null || { echo "missing: $1" >&2; exit 1; }; }
