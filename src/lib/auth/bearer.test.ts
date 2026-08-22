@@ -78,6 +78,20 @@ it('accepts an aud array containing the configured audience', async () => {
   await expect(verifyBearer(token, pub)).resolves.toMatchObject({ sub: 'svc-sub-1' })
 })
 
+// What the realm actually emits for clippy-m2m is a bare string, not an array
+// (clippy-mcp-client gets an array). jose handles both, but the shape production
+// sends deserves its own case.
+it('accepts a bare string aud equal to the configured audience', async () => {
+  envValue.M2M_AUDIENCE = 'stack-clippy'
+  const token = await sign({ aud: 'stack-clippy' })
+  await expect(verifyBearer(token, pub)).resolves.toMatchObject({ sub: 'svc-sub-1' })
+})
+
+it('rejects a bare string aud that does not match', async () => {
+  envValue.M2M_AUDIENCE = 'clippy-api'
+  await expect(verifyBearer(await sign({ aud: 'stack-clippy' }), pub)).rejects.toThrow(/aud/)
+})
+
 it('rejects a correctly scoped token minted for another audience', async () => {
   envValue.M2M_AUDIENCE = 'clippy-api'
   const other = await sign({ aud: ['some-other-service', 'account'] })

@@ -108,9 +108,15 @@ issuer, and `scope` containing `clippy-api`. Audience was historically unchecked
 
 `M2M_AUDIENCE` closes that. When set, `aud` joins the required claims and must contain the
 configured value; when unset — production today — the scope gate stands alone and the app logs one
-`M2M_AUDIENCE unset` warning per process. It ships disarmed because Keycloak mints no useful `aud`
-on a `client_credentials` token until the calling client's dedicated scope carries an audience
-mapper, so enforcing first would `401` every machine caller.
+`M2M_AUDIENCE unset` warning per process. It ships disarmed so the realm and the app can change in
+either order — arming it against a value the caller does not carry `401`s every machine caller, and
+there is no warn-on-mismatch mode.
+
+`truffles` issues a per-stack audience and, for MCP, a per-service one: `clippy-m2m` carries the
+bare string `stack-clippy`, while `clippy-mcp-client` carries `["clippy", "stack-clippy"]`. So
+`stack-clippy` would enforce today with no realm change, while `clippy-api` needs one audience
+mapper on `clippy-m2m` and completes the per-service pattern — the recommended option, since it
+makes `aud` and `scope` fail independently across the two paths.
 
 Rollout order is mapper → prove the claim in a freshly minted token → arm the env var, in
 `k8s/m2m-audience-rollout.md`. The recommended value is `clippy-api`, deliberately distinct from

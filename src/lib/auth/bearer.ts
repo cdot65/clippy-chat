@@ -12,16 +12,21 @@ export type BearerClaims = { sub: string; username: string }
 
 let warnedUnaudienced = false
 
-/** Audience enforcement is armed by `M2M_AUDIENCE` rather than always-on,
- *  because Keycloak mints no useful `aud` on a client_credentials token until
- *  the client's dedicated scope carries an audience mapper. Enforcing
- *  unconditionally would 401 every machine caller — the red-team adapter
- *  included — for the whole window between this image rolling out and the realm
- *  mapper landing, so the mapper goes first and the env var arms the check
- *  second (the same ship-then-enable order inference-auth uses for its Keycloak
- *  client). While it is unset, `scope` is the only authorization gate and a
- *  `clippy-api` token minted for any other audience in this realm is accepted:
- *  warn once per process so that gap stays visible in the logs. */
+/** Audience enforcement is armed by `M2M_AUDIENCE` rather than always-on, so the
+ *  realm and the app can be changed in either order without a window where every
+ *  machine caller 401s — the same ship-then-enable order inference-auth uses.
+ *
+ *  The value is not obvious, so check a real token before setting it. `truffles`
+ *  issues both a per-service and a per-stack audience: `clippy-mcp-client` gets
+ *  `["clippy", "stack-clippy"]`, while `clippy-m2m` — the only client that has
+ *  ever authenticated here — gets a bare string `"stack-clippy"`. So `aud` is
+ *  present today and `stack-clippy` would enforce immediately; `clippy-api`
+ *  needs an audience mapper first but completes the per-service pattern and
+ *  fails independently of `scope`.
+ *
+ *  While unset, `scope` is the only authorization gate and a `clippy-api` token
+ *  minted for any other audience in this realm is accepted: warn once per
+ *  process so that gap stays visible in the logs. */
 function audienceOpts(): { audience?: string; requiredClaims: string[] } {
   const { M2M_AUDIENCE } = env()
   // jose adds `aud` to its presence check whenever `audience` is set; listing it

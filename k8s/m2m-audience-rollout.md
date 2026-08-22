@@ -16,25 +16,45 @@ paste a client secret or an encoded token into argv, a file, or an artifact.
 | unset (current prod) | `requiredClaims: ['sub','scope']` | audience unchecked; one `console.warn` per process |
 | set | `audience: <value>`, `requiredClaims: ['sub','scope','aud']` | token must carry the audience; missing `aud` is a 401 |
 
-The gate is off by default on purpose. Keycloak puts no useful `aud` on a `client_credentials`
-token until the calling client's dedicated scope carries an audience mapper, so arming this before
-the mapper exists 401s **every** machine caller — including the red-team adapter — for the whole
-window between the image rolling out and the realm change landing.
-
-## Audience contract
-
-| Path | Client | Scope | Audience |
-| --- | --- | --- | --- |
-| Chat API (`/api/chat`, this runbook) | red-team adapter + service accounts | `clippy-api` | `clippy-api` |
-| MCP (already enforced end to end) | `clippy-mcp-client` | `mcp.invoke` | `clippy` |
-
-A value distinct from the MCP audience is deliberate: `aud` and `scope` then fail independently,
-so neither path's token satisfies the other's gate on its own.
-
-## 1. Enumerate every caller that must keep working
-
-Arming the gate breaks any `clippy-api` client that did not get the mapper. Enumerate first;
+The gate is off by default so the realm and the app can change in either order. Arming it against a
+value the caller does not carry 401s **every** machine caller, including the red-team adapter, and
 there is no "warn on mismatch" mode.
+
+## What the realm actually emits
+
+Measured 2026-08-22, not assumed — earlier revisions of this runbook wrongly claimed Keycloak mints
+no useful `aud` at all:
+
+| Client | Scope | `aud` today | Shape |
+| --- | --- | --- | --- |
+| `clippy-m2m` (chat API) | `clippy-api` | `stack-clippy` | bare string |
+| `clippy-mcp-client` (MCP) | `mcp.invoke` | `clippy`, `stack-clippy` | array |
+
+`truffles` issues a **per-stack** audience (`stack-clippy`) and, for MCP, a **per-service** one
+(`clippy`). So the chat API path already has an audience — it just doesn't have a per-service one.
+
+## Choosing the value
+
+| Option | Value | Keycloak work | Strength |
+| --- | --- | --- | --- |
+| A | `stack-clippy` | none — enforces today | Rejects any realm token outside the Clippy stack |
+| B | `clippy-api` | one audience mapper on `clippy-m2m` | Also rejects other Clippy-stack tokens; `aud` and `scope` fail independently |
+
+**B is recommended**: it completes the per-service pattern `clippy-mcp-client` already follows. Under
+A, an MCP token clears the audience check (it also carries `stack-clippy`) and is stopped only by the
+scope gate — one lock instead of two.
+
+## 1. Confirm the caller set
+
+Only `clippy-m2m` has ever authenticated to `/api/chat` — every `is_service_account` row in the app
+database is that client. That proves who *has* called, not who *could*, so still enumerate clients
+that can obtain the `clippy-api` scope before arming.
+
+```bash
+kubectl -n clippy exec clippy-postgres-0 -- sh -c \
+  'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -F "|" \
+   -c "select username, keycloak_sub, updated_at::date from user_profiles where is_service_account"'
+```
 
 ```bash
 set -euo pipefail
@@ -62,10 +82,23 @@ account hitting `/api/chat` as in scope.
 
 ## 2. Add the audience mapper, then prove the claim is live
 
-For **each** client from step 1, add a `oidc-audience-mapper` to its *dedicated* client scope with
-included custom audience `clippy-api`, added to the access token. This is additive: the app is not
-checking `aud` yet, so tokens minted before and after are both still accepted. Nothing breaks here
-— which is the point of doing it first.
+**Option A skips this step** — `stack-clippy` is already minted. Go straight to step 3.
+
+For option B: on each client from step 1, add an `oidc-audience-mapper` to its *dedicated* client
+scope — included custom audience `clippy-api`, add-to-access-token on, ID token and userinfo off
+(this is `client_credentials`). The result should be `aud: ["clippy-api", "stack-clippy"]`, matching
+the shape `clippy-mcp-client` already has.
+
+This is additive: the app is not checking `aud` yet, so tokens minted before and after are both
+accepted. Nothing breaks here — which is the point of doing it first.
+
+The credentials for the probe below are in the cluster already, so no secret needs to be handled by
+hand:
+
+```bash
+cid=$(kubectl -n keycloak get secret kc-client-clippy-m2m -o jsonpath='{.data.client-id}' | base64 -d)
+csec=$(kubectl -n keycloak get secret kc-client-clippy-m2m -o jsonpath='{.data.client-secret}' | base64 -d)
+```
 
 Prove it, without ever printing the token. The form body goes over stdin, and only selected claims
 reach the artifact directory — no encoded JWT, matching the safe-logging rules in
