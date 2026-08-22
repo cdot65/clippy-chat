@@ -110,6 +110,12 @@ In `k8s/15-secrets.yaml`, change the `clippy-mcp-client` OnePasswordItem:
   itemPath: vaults/AI Security Academy - Runtime/items/Talos - Keycloak clippy-mcp-client
 ```
 
+**In the same commit**, update `mcp-server/tests/test_manifest.py` —
+`test_chat_uses_secret_backed_mcp_client_credentials` asserts the literal string
+`vaults/Truffles/items/Truffles - Keycloak clippy-mcp-client`, so the flip fails CI without it.
+That job gates `build-and-push`, so leaving it stale stops *all* image publishing while the other
+checks stay green.
+
 Open the PR on Forgejo against `main`, let CI pass, merge, and let Argo sync. Then confirm the
 Secret was re-reconciled from the new source with byte-identical values:
 
