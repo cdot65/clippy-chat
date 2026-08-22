@@ -13,8 +13,8 @@ paste a client secret or an encoded token into argv, a file, or an artifact.
 
 | `M2M_AUDIENCE` | `jwtVerify` options | Effect |
 | --- | --- | --- |
-| unset (current prod) | `requiredClaims: ['sub','scope']` | audience unchecked; one `console.warn` per process |
-| set | `audience: <value>`, `requiredClaims: ['sub','scope','aud']` | token must carry the audience; missing `aud` is a 401 |
+| unset | `requiredClaims: ['sub','scope']` | audience unchecked; one `console.warn` per process |
+| set (current prod: `stack-clippy`) | `audience: <value>`, `requiredClaims: ['sub','scope','aud']` | token must carry the audience; missing `aud` is a 401 |
 
 The gate is off by default so the realm and the app can change in either order. Arming it against a
 value the caller does not carry 401s **every** machine caller, including the red-team adapter, and

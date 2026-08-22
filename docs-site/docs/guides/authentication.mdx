@@ -79,10 +79,10 @@ For service accounts — **and the red-team adapter**. Callers present
    `M2M_SCOPE` (default `clippy-api`), it throws `missing required scope clippy-api`.
 4. **The audience gate**, when `M2M_AUDIENCE` is set: `aud` joins `requiredClaims` and must contain
    that value, so a correctly scoped token minted for another audience in the same realm is
-   rejected. Unset (production today) means audience is unchecked and the scope gate stands alone —
+   rejected. Production sets it to `stack-clippy`. Unset means audience is unchecked and the scope gate stands alone —
    the app logs one `M2M_AUDIENCE unset` warning per process to keep that visible.
 
-:::note Why the audience gate ships disarmed
+:::note Picking the audience value
 Arming it against a value the caller does not carry `401`s every machine caller, this adapter
 included, and there is no warn-on-mismatch mode. Disarmed by default lets the realm and the app
 change in either order.
