@@ -69,7 +69,7 @@ deployment's secret store — not in the repo.
   [red-team adapter](/red-team/overview) must request this scope or every probe returns `401`.
 - **`M2M_AUDIENCE`** adds a second, independent check: when set, `verifyBearer` requires `aud` and
   demands it contain this value, so a correctly scoped token minted for a *different* audience in
-  the same realm no longer authenticates. Unset in production on purpose: arming it against a value
+  the same realm no longer authenticates. Production sets `stack-clippy`. Leave unset only while arming is unsafe: setting it to a value
   the caller does not carry `401`s every machine caller, and there is no warn-on-mismatch mode.
   Today `clippy-m2m` carries the bare string `stack-clippy` while `clippy-mcp-client` carries
   `["clippy", "stack-clippy"]`, so `stack-clippy` enforces with no realm change and `clippy-api`

@@ -85,14 +85,14 @@ spec:
                   optional: true
             - name: M2M_SCOPE
               value: "clippy-api"
-            # Audience gate for the clippy-api bearer path (Task 14). Deliberately
-            # unset: verifyBearer enforces `aud` only when this is present, and
-            # Keycloak mints no useful audience on a client_credentials token
-            # until the client's dedicated scope carries an audience mapper.
-            # Arm it only after m2m-audience-rollout.md step 2 proves the claim
-            # is live in a freshly minted token.
-            # - name: M2M_AUDIENCE
-            #   value: "clippy-api"
+            # Audience gate for the clippy-api bearer path (Task 14). Armed with
+            # stack-clippy, the per-stack audience truffles already mints on
+            # clippy-m2m — the only client that has ever authenticated here. A
+            # per-service value (clippy-api) would also fail independently of
+            # scope, but needs an audience mapper first; stack-clippy enforces
+            # today. See k8s/m2m-audience-rollout.md.
+            - name: M2M_AUDIENCE
+              value: "stack-clippy"
             - name: MCP_SERVER_URL
               value: "https://mcp-airs.cdot.io/ws-produc-985697/clippy/mcp"
             - name: MCP_AUTH_MODE

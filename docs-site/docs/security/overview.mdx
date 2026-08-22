@@ -107,10 +107,10 @@ issuer, and `scope` containing `clippy-api`. Audience was historically unchecked
 `clippy-api` token in the realm authenticated regardless of who it was minted for.
 
 `M2M_AUDIENCE` closes that. When set, `aud` joins the required claims and must contain the
-configured value; when unset — production today — the scope gate stands alone and the app logs one
+configured value. Production runs `M2M_AUDIENCE=stack-clippy`. When unset the scope gate stands alone and the app logs one
 `M2M_AUDIENCE unset` warning per process. It ships disarmed so the realm and the app can change in
 either order — arming it against a value the caller does not carry `401`s every machine caller, and
-there is no warn-on-mismatch mode.
+there is no warn-on-mismatch mode. Armed in production 2026-08-22.
 
 `truffles` issues a per-stack audience and, for MCP, a per-service one: `clippy-m2m` carries the
 bare string `stack-clippy`, while `clippy-mcp-client` carries `["clippy", "stack-clippy"]`. So
@@ -171,8 +171,8 @@ Connect access with a throwaway canary first. See
 - Tool parity survives AIRS and MCP workload restart.
 - Source clients remain disabled only after destination-client configuration parity and token
   expiry are proven.
-- The chat API bearer path can enforce `aud` (`M2M_AUDIENCE`; shipped, tested, disarmed until the
-  Keycloak audience mappers land).
+- The chat API bearer path enforces `aud` (`M2M_AUDIENCE=stack-clippy`), so a `clippy-api` token
+  minted outside the Clippy stack no longer authenticates.
 - Clippy secrets are isolated from AI Security Academy vaults: application, Postgres, and MCP
   secrets source from the **Clippy Chat** vault; Keycloak client credentials from **Truffles**.
 
