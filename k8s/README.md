@@ -85,7 +85,7 @@ upgrade — see that file's header).
 
 | Workload | Image |
 |----------|-------|
-| clippy-chat (+ migrate init) | `registry.cdot.io/clippy/clippy-chat:sha-fe3b2a2…@sha256:3b9104b…` |
+| clippy-chat (+ migrate init) | `registry.cdot.io/clippy/clippy-chat:sha-d600ebf…@sha256:c624449…` |
 | clippy-mcp | `registry.cdot.io/clippy/clippy-mcp:sha-fe3b2a2…@sha256:4b57c11…` |
 
 ## Do not hand-apply on Talos
