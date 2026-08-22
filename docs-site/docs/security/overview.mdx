@@ -134,19 +134,26 @@ Current production evidence covers **Truffles Keycloak only**. A customer Auth0 
 own registration, token projection tests, positive request, isolated negative-claim tests, and
 post-restart proof before approval.
 
-## Known approval blocker
+## Stack and vault boundary
 
-Authentication/authorization behavior passes production tests, but secret ownership does not yet
-match the approved boundary: the current manifest projects `clippy-mcp-client` from the Truffles
-vault; design requires **AI Security Academy - Runtime** only. See
-[Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22). This blocks final
-secret-boundary approval, not independent execution of the non-mutating E2E probes.
+Clippy Chat and AI Security Academy are **separate stacks** — ships in the night. They share the
+one `truffles` Keycloak realm, distinguished by the `stack-clippy` audience, but nothing for Clippy
+belongs in an Academy vault, namespace, or Keycloak stack.
 
-The cutover runbook is `k8s/mcp-client-secret-migration.md`. It is not a one-line `itemPath` edit:
-the app's three `clippy-mcp-client` `secretKeyRef`s are non-optional, so a vault that fails to
-reconcile puts every `clippy-chat` pod into `CreateContainerConfigError` — the whole app, not just
-MCP. The runbook proves Connect-operator access to the Runtime vault with a throwaway canary item
-first, and separates migration (same values, new owner) from rotation (new value).
+Earlier revisions of this handoff said the opposite: they required `clippy-mcp-client` in
+**AI Security Academy - Runtime**, and [Forgejo issue #22](https://git.cdot.io/cdot.io/clippy-chat/issues/22)
+tracked moving it there. That was backwards. **#22 is closed as invalid.**
+
+The genuine drift ran the other way — `clippy-postgres`, `clippy-app`, and `clippy-mcp-secrets`
+were sourced from the shared **AI Security Academy** vault. As of 2026-08-22 they reconcile from the
+dedicated **Clippy Chat** vault. The Keycloak client credentials remain in the realm-scoped
+**Truffles** vault, which is not an Academy vault.
+
+Changing an `itemPath` is not a one-line edit: `clippy-app` is consumed via `envFrom` and its
+`secretKeyRef`s are non-optional, so a vault the Connect server cannot resolve puts every
+`clippy-chat` pod into `CreateContainerConfigError` — and takes `clippy-postgres` with it. Prove
+Connect access with a throwaway canary first. See
+[Operations](./operations#granting-connect-access-to-a-new-vault).
 
 ## Review acceptance criteria
 
@@ -160,6 +167,7 @@ first, and separates migration (same values, new owner) from rotation (new value
   expiry are proven.
 - The chat API bearer path can enforce `aud` (`M2M_AUDIENCE`; shipped, tested, disarmed until the
   Keycloak audience mappers land).
-- `clippy-mcp-client` is migrated to AI Security Academy - Runtime and issue #22 is closed.
+- Clippy secrets are isolated from AI Security Academy vaults: application, Postgres, and MCP
+  secrets source from the **Clippy Chat** vault; Keycloak client credentials from **Truffles**.
 
 See [Production evidence](./production-evidence) for the recorded results.
